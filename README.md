@@ -4,6 +4,9 @@ A logic-less templating system for HTML, configuration files, and more.
 
 The `mustache` command renders a [Mustache](https://mustache.github.io/) template with data supplied in YAML. It writes the rendered document or documents to standard output. YAML supports lists, mappings, and multiple documents, making it suitable for everything from simple substitutions to mail-merge-style output.
 
+> [!IMPORTANT]
+> Disclaimer: This tool was carefully reviewed and tested, but it was coded using IA.
+
 ## Contents
 
 - [Contents](#contents)
