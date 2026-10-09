@@ -343,6 +343,8 @@ func (l *lexer) next() (token, error) {
 		if l.eof {
 			return token{}, io.EOF
 		}
+		// TODO: reading line by line might lead to loading large files into memory inefficiently.
+		// Modify this to read in chunks instead.
 		line, err := l.reader.ReadString('\n')
 		if errors.Is(err, io.EOF) {
 			l.eof = true

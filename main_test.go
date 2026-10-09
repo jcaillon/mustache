@@ -21,6 +21,22 @@ func TestRunMultipleDocuments(t *testing.T) {
 	}
 }
 
+func TestRunEmptyInput(t *testing.T) {
+	dir := t.TempDir()
+	template := filepath.Join(dir, "template.mustache")
+	if err := os.WriteFile(template, []byte("rendered\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, input := range []string{"", " \n  "} {
+		var stdout, stderr bytes.Buffer
+		exit := run([]string{"-", template}, strings.NewReader(input), &stdout, &stderr)
+		if exit != 0 || stdout.String() != "rendered\n" || stderr.Len() != 0 {
+			t.Fatalf("input=%q exit=%d stdout=%q stderr=%q", input, exit, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestRunMissingTags(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")

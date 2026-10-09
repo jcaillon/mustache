@@ -72,16 +72,22 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	decoder := yaml.NewDecoder(data)
 	rendered := false
+	decoded := false
 	for {
 		var documentNode yaml.Node
 		err := decoder.Decode(&documentNode)
 		if errors.Is(err, io.EOF) {
-			break
+			if decoded {
+				break
+			}
+			documentNode = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode, Tag: "!!map"}}}
+			err = nil
 		}
 		if err != nil {
 			fmt.Fprintf(stderr, "mustache: decode YAML: %v\n", err)
 			return 1
 		}
+		decoded = true
 		if len(documentNode.Content) == 0 || documentNode.Content[0].Tag == "!!null" && documentNode.Content[0].Value == "" {
 			continue
 		}
