@@ -1,0 +1,126 @@
+package render
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
+
+type specFile struct {
+	Tests []specTest `yaml:"tests"`
+}
+
+type specTest struct {
+	Name     string            `yaml:"name"`
+	Data     any               `yaml:"data"`
+	Template string            `yaml:"template"`
+	Expected string            `yaml:"expected"`
+	Partials map[string]string `yaml:"partials"`
+}
+
+func TestActiveSpecs(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "specs", "*.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if strings.HasPrefix(filepath.Base(file), "~") {
+			continue
+		}
+		contents, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var spec specFile
+		if err := yaml.Unmarshal(contents, &spec); err != nil {
+			t.Fatal(err)
+		}
+		for _, test := range spec.Tests {
+			test := test
+			t.Run(filepath.Base(file)+"/"+test.Name, func(t *testing.T) {
+				renderer, err := New(Options{Missing: MissingEmpty, Partials: test.Partials})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var output strings.Builder
+				if err := renderer.Render(&output, strings.NewReader(test.Template), test.Data); err != nil {
+					t.Fatal(err)
+				}
+				if output.String() != test.Expected {
+					t.Errorf("rendered output mismatch\nwant: %q\n got: %q", test.Expected, output.String())
+				}
+			})
+		}
+	}
+}
+
+func TestRenderStreamsTopLevelTemplate(t *testing.T) {
+	const lines = 100_001
+	reader := &limitedTemplateReader{
+		prefix: strings.Repeat("x\n", lines),
+		err:    fmt.Errorf("template read continued after output failed"),
+	}
+	renderer, err := New(Options{Missing: MissingEmpty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = renderer.Render(&failAfterWriter{remaining: 2}, reader, map[string]any{})
+	if !strings.Contains(fmt.Sprint(err), "output stopped") {
+		t.Fatalf("expected output error before reader error, got %v", err)
+	}
+	if reader.read >= len(reader.prefix) {
+		t.Fatalf("renderer read the entire %d-line template before producing output", lines)
+	}
+}
+
+func TestMalformedSections(t *testing.T) {
+	tests := []string{
+		"{{#a}}",
+		"{{#a}}{{/b}}",
+		"{{/a}}",
+		"{{name",
+	}
+	for _, template := range tests {
+		t.Run(template, func(t *testing.T) {
+			renderer, err := New(Options{Missing: MissingEmpty})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := renderer.Render(&bytes.Buffer{}, strings.NewReader(template), map[string]any{}); err == nil {
+				t.Fatal("expected malformed template error")
+			}
+		})
+	}
+}
+
+type limitedTemplateReader struct {
+	prefix string
+	read   int
+	err    error
+}
+
+func (r *limitedTemplateReader) Read(p []byte) (int, error) {
+	if r.read == len(r.prefix) {
+		return 0, r.err
+	}
+	n := copy(p, r.prefix[r.read:])
+	r.read += n
+	return n, nil
+}
+
+type failAfterWriter struct {
+	remaining int
+}
+
+func (w *failAfterWriter) Write(p []byte) (int, error) {
+	if len(p) > w.remaining {
+		return 0, fmt.Errorf("output stopped")
+	}
+	w.remaining -= len(p)
+	return len(p), nil
+}
