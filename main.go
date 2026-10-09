@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jcaillon/mustache/internal/render"
@@ -84,7 +85,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			err = nil
 		}
 		if err != nil {
-			fmt.Fprintf(stderr, "mustache: decode YAML: %v\n", err)
+			fmt.Fprintf(stderr, "mustache: decode YAML %s\n", formatYAMLParserError(flags.Arg(0), err))
 			return 1
 		}
 		decoded = true
@@ -93,7 +94,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		var document any
 		if err := documentNode.Decode(&document); err != nil {
-			fmt.Fprintf(stderr, "mustache: decode YAML: %v\n", err)
+			fmt.Fprintf(stderr, "mustache: decode YAML %s: %v\n", flags.Arg(0), err)
 			return 1
 		}
 		template, err := os.Open(flags.Arg(1))
@@ -118,6 +119,25 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func formatYAMLParserError(name string, err error) string {
+	const prefix = "yaml: line "
+
+	message := err.Error()
+	rest, ok := strings.CutPrefix(message, prefix)
+	if !ok {
+		return fmt.Sprintf("%s: %s", name, message)
+	}
+	lineText, message, ok := strings.Cut(rest, ": ")
+	if !ok {
+		return fmt.Sprintf("%s: %s", name, err)
+	}
+	line, parseErr := strconv.Atoi(lineText)
+	if parseErr != nil {
+		return fmt.Sprintf("%s: %s", name, err)
+	}
+	return fmt.Sprintf("%s:%d: %s", name, line+1, message)
 }
 
 func openData(name string, stdin io.Reader) (io.Reader, *os.File, error) {
