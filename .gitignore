@@ -1,0 +1,16 @@
+### WINDOWS ###
+desktop.ini
+folder.ico
+
+### VS Code ###
+.vscode/**
+!.vscode/extensions.json
+
+### Goland ###
+*.exe
+
+### PROJECT ###
+.env
+.envrc
+
+big-example.mustache
