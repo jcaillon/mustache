@@ -91,6 +91,25 @@ func TestRunMissingTags(t *testing.T) {
 	}
 }
 
+func TestRunStrictMissingTagLocation(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.yml")
+	template := filepath.Join(dir, "template.mustache")
+	if err := os.WriteFile(data, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(template, []byte("first line\nsecond line\n{{#missingSection}}yes{{/missingSection}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--strict", data, template}, strings.NewReader(""), &stdout, &stderr)
+	wantError := fmt.Sprintf("mustache: render template %s:3: missing tag \"missingSection\"\n", template)
+	if exit != 1 || stdout.String() != "first line\nsecond line\n" || stderr.String() != wantError {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunCustomDelimitersAndUsageErrors(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")

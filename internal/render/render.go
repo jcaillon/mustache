@@ -27,6 +27,19 @@ type Renderer struct {
 	options Options
 }
 
+type Error struct {
+	Line int
+	Err  error
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("line %d: %v", e.Line, e.Err)
+}
+
+func (e *Error) Unwrap() error {
+	return e.Err
+}
+
 func New(options Options) (*Renderer, error) {
 	if options.Delimiters == [2]string{} {
 		options.Delimiters = [2]string{"{{", "}}"}
@@ -89,7 +102,7 @@ func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any) error {
 			_, err := io.WriteString(w, tok.raw)
 			return err
 		default:
-			return fmt.Errorf("missing tag %q", tok.name)
+			return &Error{Line: tok.line, Err: fmt.Errorf("missing tag %q", tok.name)}
 		}
 	}
 
@@ -141,7 +154,7 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any) error {
 	if !found {
 		switch r.options.Missing {
 		case MissingError:
-			return fmt.Errorf("missing tag %q", n.token.name)
+			return &Error{Line: n.token.line, Err: fmt.Errorf("missing tag %q", n.token.name)}
 		case MissingKeep:
 			if _, err := io.WriteString(w, n.token.raw); err != nil {
 				return err
@@ -324,6 +337,7 @@ type token struct {
 	name   string
 	raw    string
 	indent string
+	line   int
 }
 
 type lexer struct {
@@ -332,10 +346,11 @@ type lexer struct {
 	close  string
 	queue  []token
 	eof    bool
+	line   int
 }
 
 func newLexer(r io.Reader, open, close string) *lexer {
-	return &lexer{reader: bufio.NewReader(r), open: open, close: close}
+	return &lexer{reader: bufio.NewReader(r), open: open, close: close, line: 1}
 }
 
 func (l *lexer) next() (token, error) {
@@ -345,16 +360,18 @@ func (l *lexer) next() (token, error) {
 		}
 		// TODO: reading line by line might lead to loading large files into memory inefficiently.
 		// Modify this to read in chunks instead.
+		lineNumber := l.line
 		line, err := l.reader.ReadString('\n')
 		if errors.Is(err, io.EOF) {
 			l.eof = true
 		} else if err != nil {
 			return token{}, err
 		}
+		l.line += strings.Count(line, "\n")
 		if line == "" && l.eof {
 			return token{}, io.EOF
 		}
-		tokens, err := l.tokenize(line)
+		tokens, err := l.tokenize(line, lineNumber)
 		if err != nil {
 			return token{}, err
 		}
@@ -365,7 +382,7 @@ func (l *lexer) next() (token, error) {
 	return tok, nil
 }
 
-func (l *lexer) tokenize(input string) ([]token, error) {
+func (l *lexer) tokenize(input string, line int) ([]token, error) {
 	var tokens []token
 	pos := 0
 	for {
@@ -396,6 +413,7 @@ func (l *lexer) tokenize(input string) ([]token, error) {
 			} else if err != nil {
 				return nil, err
 			}
+			l.line += strings.Count(more, "\n")
 			input += more
 			end = strings.Index(input[contentStart:], close)
 		}
@@ -409,6 +427,7 @@ func (l *lexer) tokenize(input string) ([]token, error) {
 		if err != nil {
 			return nil, err
 		}
+		tok.line = line + strings.Count(input[:start], "\n")
 		tokens = append(tokens, tok)
 		pos = end + len(close)
 	}

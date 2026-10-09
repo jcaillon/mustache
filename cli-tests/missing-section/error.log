@@ -1,2 +1,2 @@
-mustache: render template: missing tag "missingSection"
+mustache: render template missing-section/template.mustache:2: missing tag "missingSection"
 exit status 1
