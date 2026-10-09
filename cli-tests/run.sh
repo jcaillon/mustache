@@ -10,4 +10,4 @@ function runMustacheTest() {
 pushd "${BASH_SOURCE%/*}"
 
 runMustacheTest "1-set-delimiters" --set-delimiters "<% %>" --
-runMustacheTest "2-missing-variable"
+runMustacheTest "2-missing-variable" --strict

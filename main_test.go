@@ -28,18 +28,49 @@ func TestRunMissingTags(t *testing.T) {
 	if err := os.WriteFile(data, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(template, []byte("{{missing}}"), 0o600); err != nil {
+	if err := os.WriteFile(template, []byte("value={{missing}} section={{#missing}}yes{{/missing}} inverted={{^missing}}yes{{/missing}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	var stdout, stderr bytes.Buffer
-	if exit := run([]string{data, template}, strings.NewReader(""), &stdout, &stderr); exit != 1 || !strings.Contains(stderr.String(), "missing tag \"missing\"") {
-		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	tests := []struct {
+		name       string
+		args       []string
+		exit       int
+		stdout     string
+		stderrPart string
+	}{
+		{
+			name:   "missing tags are null by default",
+			args:   []string{data, template},
+			stdout: "value= section= inverted=yes",
+		},
+		{
+			name:   "keep missing tags",
+			args:   []string{"--keep-missing-tags", data, template},
+			stdout: "value={{missing}} section={{#missing}}yes{{/missing}} inverted={{^missing}}yes{{/missing}}",
+		},
+		{
+			name:       "strict missing tags",
+			args:       []string{"--strict", data, template},
+			exit:       1,
+			stdout:     "value=",
+			stderrPart: "missing tag \"missing\"",
+		},
+		{
+			name:       "conflicting options",
+			args:       []string{"--strict", "--keep-missing-tags", data, template},
+			exit:       2,
+			stderrPart: "cannot be used together",
+		},
 	}
-	stdout.Reset()
-	stderr.Reset()
-	if exit := run([]string{"--allow-missing-tags", data, template}, strings.NewReader(""), &stdout, &stderr); exit != 0 || stdout.String() != "{{missing}}" {
-		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exit := run(test.args, strings.NewReader(""), &stdout, &stderr)
+			if exit != test.exit || stdout.String() != test.stdout || !strings.Contains(stderr.String(), test.stderrPart) {
+				t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+			}
+		})
 	}
 }
 

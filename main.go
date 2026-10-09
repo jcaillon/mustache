@@ -19,7 +19,8 @@ func main() {
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("mustache", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	allowMissing := flags.Bool("allow-missing-tags", false, "keep missing tags in the output")
+	keepMissing := flags.Bool("keep-missing-tags", false, "keep missing tags in the output")
+	strict := flags.Bool("strict", false, "fail when a tag is missing from the data")
 	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing delimiters separated by whitespace")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "Usage: mustache [OPTIONS] [--] <YAML> <FILE>")
@@ -35,15 +36,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		flags.Usage()
 		return 2
 	}
+	if *keepMissing && *strict {
+		fmt.Fprintln(stderr, "mustache: --keep-missing-tags and --strict cannot be used together")
+		return 2
+	}
 
 	delimiters := strings.Fields(*setDelimiters)
 	if len(delimiters) != 2 {
 		fmt.Fprintln(stderr, "mustache: --set-delimiters requires two delimiters separated by whitespace")
 		return 2
 	}
-	missing := render.MissingError
-	if *allowMissing {
+	missing := render.MissingEmpty
+	if *keepMissing {
 		missing = render.MissingKeep
+	} else if *strict {
+		missing = render.MissingError
 	}
 	renderer, err := render.New(render.Options{
 		Missing:    missing,

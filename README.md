@@ -33,7 +33,7 @@ Mustache templates use tags such as `{{name}}` to insert values and sections suc
 
 For an overview of template syntax, see the [Mustache manual](https://mustache.github.io/mustache.5.html).
 
-By default, if a tag in the template does not have a corresponding value in the data, the command will fail, indicating the missing tag (in dot notation). You can override this behavior with the `--allow-missing-tags` option.
+By default, if a tag in the template does not have a corresponding value in the data, it will be considered as a null value (rendered as an empty string or as a falsey value). You can override this behavior with the `--keep-missing-tags` or `--strict` option.
 
 ### Data and templates
 
@@ -112,7 +112,8 @@ Hi scott!
 
 | Option | Description |
 | --- | --- |
-| `--allow-missing-tags` | Keep missing tags in the output instead of failing. By default, the command will fail if a tag in the template does not have a corresponding value in the data.² |
+| `--keep-missing-tags` | Keep missing tags "as is" in the output instead of replacing them with empty strings. |
+| `--strict` | In this mode, any missing tags (tags in the template that do not have a corresponding value in the data) will cause the command to fail, indicating the missing tag (in dot notation). |
 | `--set-delimiters` | Set custom delimiters for the template. The opening and closing delimiters should be separated by a whitespace. For example, `--set-delimiters "{{ }}"` sets the delimiters to the default Mustache delimiters. |
 
 ## Examples
@@ -140,10 +141,10 @@ age: 30
 data
 ```
 
-Render a template with missing tags allowed:
+Render a template while preserving missing tags:
 
 ```sh
-mustache --allow-missing-tags data.yml template.mustache
+mustache --keep-missing-tags data.yml template.mustache
 ```
 
 Render a template with custom delimiters:
