@@ -7,8 +7,23 @@ function runMustacheTest() {
   go run ../main.go "${@}" "${testFolder}/data.yaml" "${testFolder}/template.mustache" >"${testFolder}/output" 2>"${testFolder}/error.log" || true
 }
 
-pushd "${BASH_SOURCE%/*}"
+function runTests() {
+  local IFS testFolder
+  for testFolder in ./*; do
+    if [[ ! -d ${testFolder} ]]; then
+      continue
+    fi
+    if [[ -f ${testFolder}/options ]]; then
+      IFS='' read -rd '' REPLY <"${testFolder}/options" || :
+    else
+      REPLY=''
+    fi
+    REPLY="${REPLY%%[[:space:]]}"
+    IFS=' '
+    # shellcheck disable=SC2086
+    runMustacheTest "${testFolder#'./'}" ${REPLY}
+  done
+}
 
-runMustacheTest "set-delimiters" --set-delimiters "<% %>" --
-runMustacheTest "missing-variable" --strict
-runMustacheTest "missing-section" --strict
+pushd "${BASH_SOURCE%/*}"
+runTests
