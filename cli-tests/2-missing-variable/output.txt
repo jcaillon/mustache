@@ -1,0 +1,2 @@
+mustache: render template: missing tag "missing.variable.here"
+exit status 1

@@ -1,0 +1,20 @@
+person:
+  name: Julien
+
+isMale: true
+isFemale: false
+
+section:
+  htmlTag: "<div>hm</div>"
+
+isFalse: false
+
+count:
+  - name: 1
+  - name: 2
+  - name: 3
+
+count2:
+  - 1
+  - 2
+  - 3
