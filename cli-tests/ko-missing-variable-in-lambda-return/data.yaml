@@ -1,0 +1,2 @@
+lambda: !code
+  bash: echo -n "{{missing.var}}"
