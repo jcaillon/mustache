@@ -82,21 +82,51 @@ func TestActiveSpecs(t *testing.T) {
 }
 
 func TestRenderStreamsTopLevelTemplate(t *testing.T) {
-	const lines = 100_001
-	reader := &limitedTemplateReader{
-		prefix: strings.Repeat("x\n", lines),
-		err:    fmt.Errorf("template read continued after output failed"),
+	for _, template := range []string{
+		strings.Repeat("x\n", 100_001),
+		strings.Repeat("x", 1_000_001),
+	} {
+		reader := &limitedTemplateReader{
+			prefix: template,
+			err:    fmt.Errorf("template read continued after output failed"),
+		}
+		renderer, err := New(Options{Missing: MissingEmpty})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = renderer.Render(&failAfterWriter{remaining: 2}, reader, "", map[string]any{})
+		if !strings.Contains(fmt.Sprint(err), "output stopped") {
+			t.Fatalf("expected output error before reader error, got %v", err)
+		}
+		if reader.read >= len(reader.prefix) {
+			t.Fatalf("renderer read the entire %d-byte template before producing output", len(template))
+		}
 	}
-	renderer, err := New(Options{Missing: MissingEmpty})
-	if err != nil {
-		t.Fatal(err)
+}
+
+func TestRenderAcrossBufferBoundaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		want     string
+	}{
+		{name: "delimiter", template: strings.Repeat("x", 4095) + "{{name}}", want: strings.Repeat("x", 4095) + "Ada"},
+		{name: "standalone", template: strings.Repeat(" ", 5000) + "{{! comment}}\nafter", want: "after"},
 	}
-	err = renderer.Render(&failAfterWriter{remaining: 2}, reader, "", map[string]any{})
-	if !strings.Contains(fmt.Sprint(err), "output stopped") {
-		t.Fatalf("expected output error before reader error, got %v", err)
-	}
-	if reader.read >= len(reader.prefix) {
-		t.Fatalf("renderer read the entire %d-line template before producing output", lines)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			renderer, err := New(Options{Missing: MissingEmpty})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var output strings.Builder
+			if err := renderer.Render(&output, strings.NewReader(test.template), "", map[string]any{"name": "Ada"}); err != nil {
+				t.Fatal(err)
+			}
+			if output.String() != test.want {
+				t.Fatalf("rendered output mismatch: want %q, got %q", test.want, output.String())
+			}
+		})
 	}
 }
 

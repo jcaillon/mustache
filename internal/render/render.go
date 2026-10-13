@@ -366,11 +366,13 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePa
 		}
 		return nil
 	}
+	defer partial.Close()
 	r.logf("rendering partial %q from %s", name, displayTemplatePath(partialPath))
+	var source io.Reader = partial
 	if tok.indent != "" {
-		partial = indent(partial, tok.indent)
+		source = newIndentReader(partial, tok.indent)
 	}
-	l := newLexer(strings.NewReader(partial), r.options.Delimiters[0], r.options.Delimiters[1])
+	l := newLexer(source, r.options.Delimiters[0], r.options.Delimiters[1])
 	return r.renderStream(w, l, stack, partialPath, overrides)
 }
 
@@ -386,6 +388,7 @@ func (r *Renderer) renderParent(w io.Writer, n node, stack []any, templatePath s
 		}
 		return nil
 	}
+	defer partial.Close()
 
 	merged := make(map[string]block, len(overrides))
 	for name, value := range overrides {
@@ -398,11 +401,12 @@ func (r *Renderer) renderParent(w io.Writer, n node, stack []any, templatePath s
 			}
 		}
 	}
+	var source io.Reader = partial
 	if n.token.indent != "" {
-		partial = indent(partial, n.token.indent)
+		source = newIndentReader(partial, n.token.indent)
 	}
 	r.logf("rendering parent %q from %s", n.token.name, displayTemplatePath(partialPath))
-	return r.renderStream(w, newLexer(strings.NewReader(partial), r.options.Delimiters[0], r.options.Delimiters[1]), stack, partialPath, merged)
+	return r.renderStream(w, newLexer(source, r.options.Delimiters[0], r.options.Delimiters[1]), stack, partialPath, merged)
 }
 
 func (r *Renderer) renderBlock(w io.Writer, n node, stack []any, templatePath string, overrides map[string]block) error {
@@ -467,10 +471,13 @@ func dedent(s, prefix string) string {
 	return strings.Join(lines, "")
 }
 
-func (r *Renderer) loadPartial(templatePath, name string) (string, string, bool, error) {
+func (r *Renderer) loadPartial(templatePath, name string) (io.ReadCloser, string, bool, error) {
 	partial, ok := r.options.Partials[name]
 	if ok || templatePath == "" {
-		return partial, templatePath, ok, nil
+		if !ok {
+			return nil, templatePath, false, nil
+		}
+		return io.NopCloser(strings.NewReader(partial)), templatePath, true, nil
 	}
 	return r.LoadPartial(templatePath, name)
 }
@@ -498,31 +505,67 @@ func displayTemplatePath(templatePath string) string {
 	return templatePath
 }
 
-func (r *Renderer) LoadPartial(templatePath, name string) (string, string, bool, error) {
+func (r *Renderer) LoadPartial(templatePath, name string) (io.ReadCloser, string, bool, error) {
 	partialPath := filepath.FromSlash(name)
 	if !filepath.IsAbs(partialPath) {
 		partialPath = filepath.Join(filepath.Dir(templatePath), partialPath)
 	}
 	partialPath, err := filepath.Abs(partialPath)
 	if err != nil {
-		return "", "", false, fmt.Errorf("resolve partial path: %w", err)
+		return nil, "", false, fmt.Errorf("resolve partial path: %w", err)
 	}
-	// TODO: replace this, we read the whole file into memory instead of streaming it
-	contents, err := os.ReadFile(partialPath)
+	partial, err := os.Open(partialPath)
 	if os.IsNotExist(err) && !strings.HasSuffix(partialPath, ".mustache") {
 		partialPath += ".mustache"
-		contents, err = os.ReadFile(partialPath)
+		partial, err = os.Open(partialPath)
 	}
 	if os.IsNotExist(err) {
 		if r.options.Missing == MissingError {
-			return "", partialPath, false, fmt.Errorf("partial file not found: %s", partialPath)
+			return nil, partialPath, false, fmt.Errorf("partial file not found: %s", partialPath)
 		}
-		return "", partialPath, false, nil
+		return nil, partialPath, false, nil
 	}
 	if err != nil {
-		return "", partialPath, false, fmt.Errorf("read partial file %s: %w", partialPath, err)
+		return nil, partialPath, false, fmt.Errorf("open partial file %s: %w", partialPath, err)
 	}
-	return string(contents), partialPath, true, nil
+	return partial, partialPath, true, nil
+}
+
+type indentReader struct {
+	reader      *bufio.Reader
+	prefix      string
+	pending     []byte
+	pendingErr  error
+	atLineStart bool
+}
+
+func newIndentReader(reader io.Reader, prefix string) io.Reader {
+	return &indentReader{reader: bufio.NewReader(reader), prefix: prefix, atLineStart: true}
+}
+
+func (r *indentReader) Read(p []byte) (int, error) {
+	if len(r.pending) == 0 {
+		if r.pendingErr != nil {
+			return 0, r.pendingErr
+		}
+		fragment, err := r.reader.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			err = nil
+		}
+		if len(fragment) == 0 {
+			return 0, err
+		}
+		if r.atLineStart {
+			r.pending = append([]byte(r.prefix), fragment...)
+		} else {
+			r.pending = append(r.pending, fragment...)
+		}
+		r.atLineStart = fragment[len(fragment)-1] == '\n'
+		r.pendingErr = err
+	}
+	n := copy(p, r.pending)
+	r.pending = r.pending[n:]
+	return n, nil
 }
 
 func indent(s, prefix string) string {
@@ -649,6 +692,7 @@ type lexer struct {
 	open   string
 	close  string
 	queue  []token
+	prefix string
 	eof    bool
 	line   int
 }
@@ -662,10 +706,13 @@ func (l *lexer) next() (token, error) {
 		if l.eof {
 			return token{}, io.EOF
 		}
-		// TODO: reading line by line might lead to loading large files into memory inefficiently.
-		// Modify this to read in chunks instead.
 		lineNumber := l.line
-		line, err := l.reader.ReadString('\n')
+		fragment, err := l.reader.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			err = nil
+		}
+		line := l.prefix + string(fragment)
+		l.prefix = ""
 		if errors.Is(err, io.EOF) {
 			l.eof = true
 		} else if err != nil {
@@ -674,6 +721,19 @@ func (l *lexer) next() (token, error) {
 		l.line += strings.Count(line, "\n")
 		if line == "" && l.eof {
 			return token{}, io.EOF
+		}
+		if !strings.Contains(line, l.open) && !strings.HasSuffix(line, "\n") && !l.eof {
+			if strings.Trim(line, " \t\r") == "" {
+				l.prefix = line
+				continue
+			}
+			keep := delimiterPrefixLen(line, l.open)
+			l.prefix = line[len(line)-keep:]
+			line = line[:len(line)-keep]
+			if line != "" {
+				l.queue = []token{{kind: tokenText, raw: line}}
+			}
+			continue
 		}
 		tokens, err := l.tokenize(line, lineNumber)
 		if err != nil {
@@ -684,6 +744,16 @@ func (l *lexer) next() (token, error) {
 	tok := l.queue[0]
 	l.queue = l.queue[1:]
 	return tok, nil
+}
+
+func delimiterPrefixLen(s, delimiter string) int {
+	limit := min(len(s), len(delimiter)-1)
+	for n := limit; n > 0; n-- {
+		if strings.HasSuffix(s, delimiter[:n]) {
+			return n
+		}
+	}
+	return 0
 }
 
 func (l *lexer) tokenize(input string, line int) ([]token, error) {
