@@ -78,6 +78,25 @@ func TestRenderStreamsTopLevelTemplate(t *testing.T) {
 	}
 }
 
+func TestRenderPartialUsesConfiguredDelimiters(t *testing.T) {
+	renderer, err := New(Options{
+		Missing:    MissingEmpty,
+		Partials:   map[string]string{"user": "<%name%>"},
+		Delimiters: [2]string{"<%", "%>"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output strings.Builder
+	if err := renderer.Render(&output, strings.NewReader("<%>user%>"), map[string]any{"name": "Ada"}); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "Ada" {
+		t.Fatalf("rendered output mismatch: want %q, got %q", "Ada", output.String())
+	}
+}
+
 func TestMalformedSections(t *testing.T) {
 	tests := []string{
 		"{{#a}}",

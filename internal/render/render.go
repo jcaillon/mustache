@@ -232,7 +232,7 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any) error {
 	if tok.indent != "" {
 		partial = indent(partial, tok.indent)
 	}
-	l := newLexer(strings.NewReader(partial), "{{", "}}")
+	l := newLexer(strings.NewReader(partial), r.options.Delimiters[0], r.options.Delimiters[1])
 	return r.renderStream(w, l, stack)
 }
 
