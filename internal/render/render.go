@@ -573,9 +573,19 @@ func standalone(tokens []token) []token {
 	}
 
 	result := tokens[:0]
-	for _, tok := range tokens {
+	for i, tok := range tokens {
 		if tok.kind == tokenText {
 			continue
+		}
+		for _, adjacent := range tokens[:i] {
+			if adjacent.kind == tokenText {
+				tok.raw = adjacent.raw + tok.raw
+			}
+		}
+		for _, adjacent := range tokens[i+1:] {
+			if adjacent.kind == tokenText {
+				tok.raw += adjacent.raw
+			}
 		}
 		if tok.kind == tokenPartial {
 			tok.indent = whitespace

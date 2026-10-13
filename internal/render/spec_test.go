@@ -97,6 +97,22 @@ func TestRenderPartialUsesConfiguredDelimiters(t *testing.T) {
 	}
 }
 
+func TestKeepMissingStandalonePartials(t *testing.T) {
+	renderer, err := New(Options{Missing: MissingKeep})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	template := "before\n  {{>missing}}\n{{>*missingName}}\nafter"
+	var output strings.Builder
+	if err := renderer.Render(&output, strings.NewReader(template), "", map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != template {
+		t.Fatalf("rendered output mismatch: want %q, got %q", template, output.String())
+	}
+}
+
 func TestMalformedSections(t *testing.T) {
 	tests := []string{
 		"{{#a}}",
