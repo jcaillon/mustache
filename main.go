@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -63,30 +62,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	} else if *strict {
 		missing = render.MissingError
 	}
-	templatePath, err := filepath.Abs(flags.Arg(1))
-	if err != nil {
-		fmt.Fprintf(stderr, "mustache: resolve template path: %v\n", err)
-		return 1
-	}
 	renderer, err := render.New(render.Options{
-		Missing: missing,
-		LoadPartial: func(name string) (string, bool, error) {
-			partialPath := filepath.FromSlash(name)
-			if !filepath.IsAbs(partialPath) {
-				partialPath = filepath.Join(filepath.Dir(templatePath), partialPath)
-			}
-			contents, err := os.ReadFile(partialPath)
-			if os.IsNotExist(err) {
-				if *strict {
-					return "", false, fmt.Errorf("partial file not found: %s", partialPath)
-				}
-				return "", false, nil
-			}
-			if err != nil {
-				return "", false, fmt.Errorf("read partial file %s: %w", partialPath, err)
-			}
-			return string(contents), true, nil
-		},
+		Missing:    missing,
 		Delimiters: [2]string{delimiters[0], delimiters[1]},
 	})
 	if err != nil {
@@ -134,7 +111,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "mustache: open template: %v\n", err)
 			return 1
 		}
-		err = renderer.Render(stdout, template, document)
+		err = renderer.Render(stdout, template, flags.Arg(1), document)
 		closeErr := template.Close()
 		if err != nil {
 			var renderErr *render.Error

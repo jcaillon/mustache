@@ -154,6 +154,34 @@ func TestRunPartials(t *testing.T) {
 	}
 }
 
+func TestRunNestedPartialsRelativeToCurrentTemplate(t *testing.T) {
+	dir := t.TempDir()
+	partials := filepath.Join(dir, "partials")
+	if err := os.Mkdir(partials, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(dir, "data.yml")
+	template := filepath.Join(dir, "template.mustache")
+	outer := filepath.Join(partials, "outer.mustache")
+	inner := filepath.Join(partials, "inner.mustache")
+	for path, contents := range map[string]string{
+		data:     "name: Ada\n",
+		template: "{{>partials/outer.mustache}}",
+		outer:    "{{>inner.mustache}}",
+		inner:    "Hello {{name}}!",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--strict", data, template}, strings.NewReader(""), &stdout, &stderr)
+	if exit != 0 || stdout.String() != "Hello Ada!" || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunStrictMissingDynamicPartialName(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")

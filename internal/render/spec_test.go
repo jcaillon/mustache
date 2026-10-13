@@ -48,7 +48,7 @@ func TestActiveSpecs(t *testing.T) {
 					t.Fatal(err)
 				}
 				var output strings.Builder
-				if err := renderer.Render(&output, strings.NewReader(test.Template), test.Data); err != nil {
+				if err := renderer.Render(&output, strings.NewReader(test.Template), "", test.Data); err != nil {
 					t.Fatal(err)
 				}
 				if output.String() != test.Expected {
@@ -69,7 +69,7 @@ func TestRenderStreamsTopLevelTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = renderer.Render(&failAfterWriter{remaining: 2}, reader, map[string]any{})
+	err = renderer.Render(&failAfterWriter{remaining: 2}, reader, "", map[string]any{})
 	if !strings.Contains(fmt.Sprint(err), "output stopped") {
 		t.Fatalf("expected output error before reader error, got %v", err)
 	}
@@ -89,7 +89,7 @@ func TestRenderPartialUsesConfiguredDelimiters(t *testing.T) {
 	}
 
 	var output strings.Builder
-	if err := renderer.Render(&output, strings.NewReader("<%>user%>"), map[string]any{"name": "Ada"}); err != nil {
+	if err := renderer.Render(&output, strings.NewReader("<%>user%>"), "", map[string]any{"name": "Ada"}); err != nil {
 		t.Fatal(err)
 	}
 	if output.String() != "Ada" {
@@ -110,7 +110,7 @@ func TestMalformedSections(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := renderer.Render(&bytes.Buffer{}, strings.NewReader(template), map[string]any{}); err == nil {
+			if err := renderer.Render(&bytes.Buffer{}, strings.NewReader(template), "", map[string]any{}); err == nil {
 				t.Fatal("expected malformed template error")
 			}
 		})

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 )
@@ -18,10 +20,9 @@ const (
 )
 
 type Options struct {
-	Missing     MissingBehavior
-	Partials    map[string]string
-	LoadPartial func(string) (string, bool, error)
-	Delimiters  [2]string
+	Missing    MissingBehavior
+	Partials   map[string]string
+	Delimiters [2]string
 }
 
 type Renderer struct {
@@ -51,12 +52,19 @@ func New(options Options) (*Renderer, error) {
 	return &Renderer{options: options}, nil
 }
 
-func (r *Renderer) Render(w io.Writer, template io.Reader, data any) error {
+func (r *Renderer) Render(w io.Writer, template io.Reader, templatePath string, data any) error {
+	if templatePath != "" {
+		var err error
+		templatePath, err = filepath.Abs(templatePath)
+		if err != nil {
+			return fmt.Errorf("resolve template path: %w", err)
+		}
+	}
 	l := newLexer(template, r.options.Delimiters[0], r.options.Delimiters[1])
-	return r.renderStream(w, l, []any{data})
+	return r.renderStream(w, l, []any{data}, templatePath)
 }
 
-func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any) error {
+func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any, templatePath string) error {
 	for {
 		tok, err := l.next()
 		if errors.Is(err, io.EOF) {
@@ -80,13 +88,13 @@ func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any) error {
 			if err != nil {
 				return err
 			}
-			if err := r.renderSection(w, node, stack); err != nil {
+			if err := r.renderSection(w, node, stack, templatePath); err != nil {
 				return err
 			}
 		case tokenEnd:
 			return fmt.Errorf("unexpected closing section %q", tok.name)
 		case tokenPartial:
-			if err := r.renderPartial(w, tok, stack); err != nil {
+			if err := r.renderPartial(w, tok, stack, templatePath); err != nil {
 				return err
 			}
 		}
@@ -150,7 +158,7 @@ func parseSection(l *lexer, opener token) (node, error) {
 	}
 }
 
-func (r *Renderer) renderSection(w io.Writer, n node, stack []any) error {
+func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath string) error {
 	value, found := lookup(n.token.name, stack)
 	if !found {
 		switch r.options.Missing {
@@ -160,7 +168,7 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any) error {
 			if _, err := io.WriteString(w, n.token.raw); err != nil {
 				return err
 			}
-			if err := r.renderNodes(w, n.children, stack); err != nil {
+			if err := r.renderNodes(w, n.children, stack, templatePath); err != nil {
 				return err
 			}
 			_, err := io.WriteString(w, n.closeRaw)
@@ -170,7 +178,7 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any) error {
 
 	if n.token.kind == tokenInverted {
 		if !truthy(value) {
-			return r.renderNodes(w, n.children, stack)
+			return r.renderNodes(w, n.children, stack, templatePath)
 		}
 		return nil
 	}
@@ -178,19 +186,19 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any) error {
 	items, isList := asList(value)
 	if isList {
 		for _, item := range items {
-			if err := r.renderNodes(w, n.children, append(stack, item)); err != nil {
+			if err := r.renderNodes(w, n.children, append(stack, item), templatePath); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 	if truthy(value) {
-		return r.renderNodes(w, n.children, append(stack, value))
+		return r.renderNodes(w, n.children, append(stack, value), templatePath)
 	}
 	return nil
 }
 
-func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any) error {
+func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templatePath string) error {
 	for _, n := range nodes {
 		switch n.token.kind {
 		case tokenText:
@@ -202,11 +210,11 @@ func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any) error {
 				return err
 			}
 		case tokenSection, tokenInverted:
-			if err := r.renderSection(w, n, stack); err != nil {
+			if err := r.renderSection(w, n, stack, templatePath); err != nil {
 				return err
 			}
 		case tokenPartial:
-			if err := r.renderPartial(w, n.token, stack); err != nil {
+			if err := r.renderPartial(w, n.token, stack, templatePath); err != nil {
 				return err
 			}
 		}
@@ -214,7 +222,7 @@ func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any) error {
 	return nil
 }
 
-func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any) error {
+func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePath string) error {
 	name := tok.name
 	if strings.HasPrefix(name, "*") {
 		if strings.HasPrefix(name, "**") {
@@ -235,9 +243,10 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any) error {
 		name = stringify(value)
 	}
 	partial, ok := r.options.Partials[name]
-	if !ok && r.options.LoadPartial != nil {
+	partialPath := templatePath
+	if !ok && templatePath != "" {
 		var err error
-		partial, ok, err = r.options.LoadPartial(name)
+		partial, partialPath, ok, err = r.LoadPartial(templatePath, name)
 		if err != nil {
 			return &Error{Line: tok.line, Err: err}
 		}
@@ -253,7 +262,29 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any) error {
 		partial = indent(partial, tok.indent)
 	}
 	l := newLexer(strings.NewReader(partial), r.options.Delimiters[0], r.options.Delimiters[1])
-	return r.renderStream(w, l, stack)
+	return r.renderStream(w, l, stack, partialPath)
+}
+
+func (r *Renderer) LoadPartial(templatePath, name string) (string, string, bool, error) {
+	partialPath := filepath.FromSlash(name)
+	if !filepath.IsAbs(partialPath) {
+		partialPath = filepath.Join(filepath.Dir(templatePath), partialPath)
+	}
+	partialPath, err := filepath.Abs(partialPath)
+	if err != nil {
+		return "", "", false, fmt.Errorf("resolve partial path: %w", err)
+	}
+	contents, err := os.ReadFile(partialPath)
+	if os.IsNotExist(err) {
+		if r.options.Missing == MissingError {
+			return "", partialPath, false, fmt.Errorf("partial file not found: %s", partialPath)
+		}
+		return "", partialPath, false, nil
+	}
+	if err != nil {
+		return "", partialPath, false, fmt.Errorf("read partial file %s: %w", partialPath, err)
+	}
+	return string(contents), partialPath, true, nil
 }
 
 func indent(s, prefix string) string {
