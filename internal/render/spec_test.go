@@ -160,6 +160,27 @@ func TestVerboseLookupUsesPartialPathAndLine(t *testing.T) {
 	}
 }
 
+func TestLoadPartialAppendsMustacheSuffix(t *testing.T) {
+	dir := t.TempDir()
+	templatePath := filepath.Join(dir, "template.mustache")
+	partialPath := filepath.Join(dir, "article.mustache")
+	if err := os.WriteFile(partialPath, []byte("Hello, {{name}}!"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	renderer, err := New(Options{Missing: MissingError})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := renderer.Render(&output, strings.NewReader("{{>article}}"), templatePath, map[string]any{"name": "Ada"}); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "Hello, Ada!" {
+		t.Fatalf("rendered output mismatch: want %q, got %q", "Hello, Ada!", output.String())
+	}
+}
+
 func TestKeepMissingStandalonePartials(t *testing.T) {
 	renderer, err := New(Options{Missing: MissingKeep})
 	if err != nil {

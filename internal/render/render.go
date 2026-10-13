@@ -509,6 +509,10 @@ func (r *Renderer) LoadPartial(templatePath, name string) (string, string, bool,
 	}
 	// TODO: replace this, we read the whole file into memory instead of streaming it
 	contents, err := os.ReadFile(partialPath)
+	if os.IsNotExist(err) && !strings.HasSuffix(partialPath, ".mustache") {
+		partialPath += ".mustache"
+		contents, err = os.ReadFile(partialPath)
+	}
 	if os.IsNotExist(err) {
 		if r.options.Missing == MissingError {
 			return "", partialPath, false, fmt.Errorf("partial file not found: %s", partialPath)
