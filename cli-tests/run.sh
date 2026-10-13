@@ -8,6 +8,17 @@ function runMustacheTest() {
   printf '%q ' "go" "${args[@]}"
   printf '\n'
   go "${args[@]}" >"${testFolder}/output" 2>"${testFolder}/error.log" || true
+
+  if [[ -s "${testFolder}/error.log" ]]; then
+    git diff "${testFolder}/error.log"
+  else
+    rm -f "${testFolder}/error.log"
+  fi
+  if [[ -s "${testFolder}/output" ]]; then
+    git diff "${testFolder}/output"
+  else
+    rm -f "${testFolder}/output"
+  fi
 }
 
 function runTests() {

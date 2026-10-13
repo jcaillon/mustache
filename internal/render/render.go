@@ -222,7 +222,15 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any) error {
 		}
 		value, found := lookup(name[1:], stack)
 		if !found {
-			return nil
+			switch r.options.Missing {
+			case MissingError:
+				return &Error{Line: tok.line, Err: fmt.Errorf("missing tag %q", name[1:])}
+			case MissingKeep:
+				_, err := io.WriteString(w, tok.raw)
+				return err
+			default:
+				return nil
+			}
 		}
 		name = stringify(value)
 	}

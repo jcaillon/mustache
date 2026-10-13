@@ -144,6 +144,25 @@ func TestRunPartials(t *testing.T) {
 	}
 }
 
+func TestRunStrictMissingDynamicPartialName(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.yml")
+	template := filepath.Join(dir, "template.mustache")
+	if err := os.WriteFile(data, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(template, []byte("{{>*missing.partial.mustache}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--strict", data, template}, strings.NewReader(""), &stdout, &stderr)
+	wantError := fmt.Sprintf("mustache: render template %s:1: missing tag %q\n", template, "missing.partial.mustache")
+	if exit != 1 || stdout.Len() != 0 || stderr.String() != wantError {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunCustomDelimitersAndUsageErrors(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")
