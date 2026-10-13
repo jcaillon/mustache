@@ -284,7 +284,7 @@ func TestRunVerboseLogsBashSectionArguments(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	exit := run([]string{"--verbose", data, template}, strings.NewReader(""), &stdout, &stderr)
-	wantLog := "mustache: verbose: executing bash command args=[\"bash\" \"-c\" \"printf %s \\\"$1\\\"\" \"-s\" \"hello world\"]"
+	wantLog := "mustache: verbose: executing bash command args=[\"bash\" \"-c\" \"set -- \\\"$MUSTACHE_LAMBDA_ARG\\\"; printf %s \\\"$1\\\"\" \"-s\"]"
 	if exit != 0 || stdout.String() != "hello world" || !strings.Contains(stderr.String(), wantLog) {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}

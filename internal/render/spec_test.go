@@ -181,6 +181,25 @@ func TestMalformedSections(t *testing.T) {
 	}
 }
 
+func TestBashLambdaReceivesRawSectionWithBraces(t *testing.T) {
+	renderer, err := New(Options{Missing: MissingEmpty})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data := map[string]any{
+		"x":      "Error!",
+		"lambda": BashLambda(`if [[ $1 == "{{x}}" ]]; then printf yes; else printf %s "$1"; fi`),
+	}
+	var output strings.Builder
+	if err := renderer.Render(&output, strings.NewReader("<{{#lambda}}{{x}}{{/lambda}}>"), "", data); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "<yes>" {
+		t.Fatalf("rendered output mismatch: want %q, got %q", "<yes>", output.String())
+	}
+}
+
 type limitedTemplateReader struct {
 	prefix string
 	read   int

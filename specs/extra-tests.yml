@@ -1,12 +1,12 @@
 overview: |
   Extra tests not present in the original spec.
 tests:
-  # - name: Section - Receive Raw Section String 2
-  #   desc: Lambdas used for sections should receive the raw section string.
-  #   data:
-  #     x: 'Error!'
-  #     lambda: !code
-  #       bash:    'if [[ "$1" == "{{x}}{{^boolean}}\n^{{/boolean}}{{! comment }}" ]]; then echo -n "yes"; else echo -n "${1}"; fi'
-  #       # go:      'func(text string) string { if text == "{{x}}" { return "yes" } else { return "no" } }'
-  #   template: "<{{#lambda}}{{x}}{{^boolean}}\n^{{/boolean}}{{! comment }}{{/lambda}}>"
-  #   expected: "<yes>"
+  - name: Section - Receive Raw Section String 2
+    desc: Lambdas used for sections should receive the raw section string.
+    data:
+      x: 'Error!'
+      lambda: !code
+        bash:    'if [[ "$1" == $''{{x}}{{^boolean}}\n^{{/boolean}}{{! comment }}'' ]]; then echo -n "yes"; else echo -n "${1}"; fi'
+        # go:      'func(text string) string { if text == "{{x}}" { return "yes" } else { return "no" } }'
+    template: "<{{#lambda}}{{x}}{{^boolean}}\n^{{/boolean}}{{! comment }}{{/lambda}}>"
+    expected: "<yes>"
