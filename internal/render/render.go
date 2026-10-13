@@ -236,13 +236,11 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 
 	if lambda, ok := value.(BashLambda); ok {
 		output, err := r.runBashLambda(lambda, rawNodes(n.children))
-		if n.token.kind == tokenInverted {
-			if err != nil {
+		if err != nil {
+			if n.token.kind == tokenInverted {
 				return nil
 			}
-		}
-		if err != nil {
-			return nil
+			return &Error{File: templatePath, Line: n.token.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
 		}
 		return r.renderStream(w, newLexer(bytes.NewReader(output), n.token.open, n.token.close), stack, templatePath, overrides)
 	}
@@ -254,10 +252,9 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 		return nil
 	}
 
-	items, isList := asList(value)
-	if isList {
-		for _, item := range items {
-			if err := r.renderNodes(w, n.children, append(stack, item), templatePath, overrides); err != nil {
+	if items, ok := listValue(value); ok {
+		for i := 0; i < items.Len(); i++ {
+			if err := r.renderNodes(w, n.children, append(stack, items.Index(i).Interface()), templatePath, overrides); err != nil {
 				return err
 			}
 		}
@@ -300,14 +297,18 @@ func (r *Renderer) runBashLambda(lambda BashLambda, args ...string) ([]byte, err
 
 func rawNodes(nodes []node) string {
 	var raw strings.Builder
+	writeRawNodes(&raw, nodes)
+	return raw.String()
+}
+
+func writeRawNodes(raw *strings.Builder, nodes []node) {
 	for _, n := range nodes {
 		raw.WriteString(n.token.raw)
 		if n.token.kind == tokenSection || n.token.kind == tokenInverted || n.token.kind == tokenParent || n.token.kind == tokenBlock {
-			raw.WriteString(rawNodes(n.children))
+			writeRawNodes(raw, n.children)
 			raw.WriteString(n.closeRaw)
 		}
 	}
-	return raw.String()
 }
 
 func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templatePath string, overrides map[string]block) error {
@@ -583,19 +584,20 @@ func lookup(name string, stack []any) (any, bool) {
 	if name == "." {
 		return stack[len(stack)-1], true
 	}
-	parts := strings.Split(name, ".")
+	key, rest, nested := strings.Cut(name, ".")
 	var value any
 	found := false
 	for i := len(stack) - 1; i >= 0; i-- {
-		if value, found = mapValue(stack[i], parts[0]); found {
+		if value, found = mapValue(stack[i], key); found {
 			break
 		}
 	}
 	if !found {
 		return nil, false
 	}
-	for _, part := range parts[1:] {
-		value, found = mapValue(value, part)
+	for nested {
+		key, rest, nested = strings.Cut(rest, ".")
+		value, found = mapValue(value, key)
 		if !found {
 			return nil, false
 		}
@@ -616,19 +618,15 @@ func mapValue(value any, key string) (any, bool) {
 	}
 }
 
-func asList(value any) ([]any, bool) {
+func listValue(value any) (reflect.Value, bool) {
 	if value == nil {
-		return nil, false
+		return reflect.Value{}, false
 	}
 	v := reflect.ValueOf(value)
 	if v.Kind() != reflect.Slice && v.Kind() != reflect.Array {
-		return nil, false
+		return reflect.Value{}, false
 	}
-	items := make([]any, v.Len())
-	for i := range items {
-		items[i] = v.Index(i).Interface()
-	}
-	return items, true
+	return v, true
 }
 
 func truthy(value any) bool {

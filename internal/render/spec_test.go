@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -263,6 +264,21 @@ func TestBashLambdaReceivesRawSectionWithBraces(t *testing.T) {
 	}
 	if output.String() != "<yes>" {
 		t.Fatalf("rendered output mismatch: want %q, got %q", "<yes>", output.String())
+	}
+}
+
+func TestBashSectionLambdaReportsCommandFailure(t *testing.T) {
+	renderer, err := New(Options{Missing: MissingEmpty})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = renderer.Render(&strings.Builder{}, strings.NewReader("{{#lambda}}text{{/lambda}}"), "", map[string]any{
+		"lambda": BashLambda("exit 3"),
+	})
+	var renderErr *Error
+	if !errors.As(err, &renderErr) || renderErr.Line != 1 || !strings.Contains(renderErr.Err.Error(), "execute bash lambda") {
+		t.Fatalf("expected contextual lambda error, got %v", err)
 	}
 }
 
