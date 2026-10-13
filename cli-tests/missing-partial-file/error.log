@@ -1,0 +1,2 @@
+mustache: render template cli-tests/missing-partial-file/template.mustache:1: partial file not found: C:\Users\jcaillon\data\repo\github.com\jcaillon\mustache\cli-tests\missing-partial-file\missing.partial.mustache
+exit status 1

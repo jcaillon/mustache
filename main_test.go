@@ -110,6 +110,40 @@ func TestRunStrictMissingTagLocation(t *testing.T) {
 	}
 }
 
+func TestRunPartials(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.yml")
+	template := filepath.Join(dir, "template.mustache")
+	partial := filepath.Join(dir, "partial.mustache")
+	if err := os.WriteFile(data, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(template, []byte("before\n{{>partial.mustache}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(partial, []byte("included"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--strict", data, template}, strings.NewReader(""), &stdout, &stderr)
+	if exit != 0 || stdout.String() != "before\nincluded" || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+
+	missing := filepath.Join(dir, "missing.mustache")
+	if err := os.WriteFile(template, []byte("before\n{{>missing.mustache}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	exit = run([]string{"--strict", data, template}, strings.NewReader(""), &stdout, &stderr)
+	wantError := fmt.Sprintf("mustache: render template %s:2: partial file not found: %s\n", template, missing)
+	if exit != 1 || stdout.String() != "before\n" || stderr.String() != wantError {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunCustomDelimitersAndUsageErrors(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")

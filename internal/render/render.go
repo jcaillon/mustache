@@ -18,9 +18,10 @@ const (
 )
 
 type Options struct {
-	Missing    MissingBehavior
-	Partials   map[string]string
-	Delimiters [2]string
+	Missing     MissingBehavior
+	Partials    map[string]string
+	LoadPartial func(string) (string, error)
+	Delimiters  [2]string
 }
 
 type Renderer struct {
@@ -226,6 +227,14 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any) error {
 		name = stringify(value)
 	}
 	partial, ok := r.options.Partials[name]
+	if !ok && r.options.LoadPartial != nil {
+		var err error
+		partial, err = r.options.LoadPartial(name)
+		if err != nil {
+			return &Error{Line: tok.line, Err: err}
+		}
+		ok = true
+	}
 	if !ok {
 		return nil
 	}

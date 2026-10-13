@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -23,7 +24,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("mustache", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	keepMissing := flags.Bool("keep-missing-tags", false, "keep missing tags in the output")
-	strict := flags.Bool("strict", false, "fail when a tag is missing from the data")
+	strict := flags.Bool("strict", false, "fail when a tag or partial file is missing")
 	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing delimiters separated by whitespace")
 	showVersion := flags.Bool("version", false, "print the version and exit")
 	flags.Usage = func() {
@@ -62,8 +63,30 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	} else if *strict {
 		missing = render.MissingError
 	}
+	templatePath, err := filepath.Abs(flags.Arg(1))
+	if err != nil {
+		fmt.Fprintf(stderr, "mustache: resolve template path: %v\n", err)
+		return 1
+	}
 	renderer, err := render.New(render.Options{
-		Missing:    missing,
+		Missing: missing,
+		LoadPartial: func(name string) (string, error) {
+			partialPath := filepath.FromSlash(name)
+			if !filepath.IsAbs(partialPath) {
+				partialPath = filepath.Join(filepath.Dir(templatePath), partialPath)
+			}
+			contents, err := os.ReadFile(partialPath)
+			if os.IsNotExist(err) {
+				if *strict {
+					return "", fmt.Errorf("partial file not found: %s", partialPath)
+				}
+				return "", nil
+			}
+			if err != nil {
+				return "", fmt.Errorf("read partial file %s: %w", partialPath, err)
+			}
+			return string(contents), nil
+		},
 		Delimiters: [2]string{delimiters[0], delimiters[1]},
 	})
 	if err != nil {

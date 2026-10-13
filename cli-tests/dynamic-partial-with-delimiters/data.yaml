@@ -2,3 +2,8 @@ person:
   name: Julien
 
 partialName: partial1.mustache
+
+count:
+  - name: 1
+  - name: 2
+  - name: 3

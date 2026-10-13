@@ -124,7 +124,7 @@ Hi scott!
 | Option | Description |
 | --- | --- |
 | `--keep-missing-tags` | Keep missing tags "as is" in the output instead of replacing them with empty strings. |
-| `--strict` | In this mode, any missing tags (tags in the template that do not have a corresponding value in the data) will cause the command to fail, indicating the missing tag (in dot notation). |
+| `--strict` | Fail on missing tags or partial files. Missing partial errors include the full expected file path. |
 | `--set-delimiters` | Set custom delimiters for the template. The opening and closing delimiters should be separated by a whitespace. For example, `--set-delimiters "{{ }}"` sets the delimiters to the default Mustache delimiters. |
 | `--version` | Print the version and exit. |
 
