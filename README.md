@@ -17,10 +17,18 @@ The `mustache` command renders a [Mustache](https://mustache.github.io/) templat
   - [Multiple YAML documents](#multiple-yaml-documents)
 - [Options](#options)
 - [Examples](#examples)
+- [Development](#development)
+- [Releasing](#releasing)
 
 ## Installation
 
-Install Mustache by downloading a binary from the releases page.
+Install Mustache by downloading an archive for your platform from the [releases page](https://github.com/jcaillon/mustache/releases). Extract the archive and place the `mustache` executable in a directory on your `PATH`.
+
+You can also install the latest source with Go:
+
+```sh
+go install github.com/jcaillon/mustache@latest
+```
 
 ## Usage
 
@@ -118,6 +126,7 @@ Hi scott!
 | `--keep-missing-tags` | Keep missing tags "as is" in the output instead of replacing them with empty strings. |
 | `--strict` | In this mode, any missing tags (tags in the template that do not have a corresponding value in the data) will cause the command to fail, indicating the missing tag (in dot notation). |
 | `--set-delimiters` | Set custom delimiters for the template. The opening and closing delimiters should be separated by a whitespace. For example, `--set-delimiters "{{ }}"` sets the delimiters to the default Mustache delimiters. |
+| `--version` | Print the version and exit. |
 
 ## Examples
 
@@ -155,3 +164,33 @@ Render a template with custom delimiters:
 ```sh
 mustache --set-delimiters "<% %>" data.yml template.mustache
 ```
+
+## Development
+
+Run the same checks used by CI:
+
+```sh
+go vet ./...
+go test ./...
+go build ./...
+```
+
+To validate the release configuration without publishing anything:
+
+```sh
+goreleaser check
+goreleaser release --snapshot --clean
+```
+
+## Releasing
+
+Releases use semantic version tags. Make sure CI is green on `main`, then create and push an annotated tag:
+
+```sh
+git switch main
+git pull --ff-only
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+Pushing the tag runs the release workflow. It tests the project, builds Linux, macOS, and Windows archives for amd64 and arm64, generates SHA-256 checksums and release notes, and publishes them to GitHub Releases. Tags such as `v1.1.0-rc.1` are published as prereleases.

@@ -132,6 +132,14 @@ func TestRunCustomDelimitersAndUsageErrors(t *testing.T) {
 	}
 }
 
+func TestRunVersion(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--version"}, strings.NewReader(""), &stdout, &stderr)
+	if exit != 0 || stdout.String() != "mustache dev\n" || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunInvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")

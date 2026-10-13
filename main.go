@@ -13,6 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var version = "dev"
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
@@ -23,6 +25,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	keepMissing := flags.Bool("keep-missing-tags", false, "keep missing tags in the output")
 	strict := flags.Bool("strict", false, "fail when a tag is missing from the data")
 	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing delimiters separated by whitespace")
+	showVersion := flags.Bool("version", false, "print the version and exit")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "Usage: mustache [OPTIONS] [--] <YAML> <FILE>")
 		flags.PrintDefaults()
@@ -32,6 +35,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 0
 		}
 		return 2
+	}
+	if *showVersion {
+		fmt.Fprintln(stdout, "mustache", version)
+		return 0
 	}
 	if flags.NArg() != 2 {
 		fmt.Fprintln(stderr, "mustache: wrong number of arguments (expected 2, got", flags.NArg(), ")")

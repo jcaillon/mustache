@@ -12,5 +12,6 @@ folder.ico
 ### PROJECT ###
 .env
 .envrc
+dist/
 
 big-example.mustache
