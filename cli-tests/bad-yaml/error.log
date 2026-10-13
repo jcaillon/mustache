@@ -1,2 +1,2 @@
-mustache: decode YAML bad-yaml/data.yaml:5: did not find expected key
+mustache: decode YAML cli-tests/bad-yaml/data.yaml:5: did not find expected key
 exit status 1

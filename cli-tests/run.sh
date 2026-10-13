@@ -4,13 +4,15 @@ set -euo pipefail
 function runMustacheTest() {
   local testFolder="${1}"
   shift 1
-  echo go run ../main.go "${@}" "${testFolder}/data.yaml" "${testFolder}/template.mustache"
-  go run ../main.go "${@}" "${testFolder}/data.yaml" "${testFolder}/template.mustache" >"${testFolder}/output" 2>"${testFolder}/error.log" || true
+  local -a args=(run main.go "${@}" "${testFolder}/data.yaml" "${testFolder}/template.mustache")
+  printf '%q ' "go" "${args[@]}"
+  printf '\n'
+  go "${args[@]}" >"${testFolder}/output" 2>"${testFolder}/error.log" || true
 }
 
 function runTests() {
   local IFS testFolder
-  for testFolder in ./*; do
+  for testFolder in "./${BASH_SOURCE%/*}"/*; do
     if [[ ! -d ${testFolder} ]]; then
       continue
     fi
@@ -27,5 +29,4 @@ function runTests() {
   done
 }
 
-pushd "${BASH_SOURCE%/*}"
 runTests

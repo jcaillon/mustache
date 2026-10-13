@@ -214,7 +214,18 @@ func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any) error {
 }
 
 func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any) error {
-	partial, ok := r.options.Partials[tok.name]
+	name := tok.name
+	if strings.HasPrefix(name, "*") {
+		if strings.HasPrefix(name, "**") {
+			return nil
+		}
+		value, found := lookup(name[1:], stack)
+		if !found {
+			return nil
+		}
+		name = stringify(value)
+	}
+	partial, ok := r.options.Partials[name]
 	if !ok {
 		return nil
 	}
@@ -461,6 +472,9 @@ func (l *lexer) makeToken(raw, inner string, triple bool) (token, error) {
 		kind, name = tokenEnd, strings.TrimSpace(trimmed[1:])
 	case '>':
 		kind, name = tokenPartial, strings.TrimSpace(trimmed[1:])
+		if strings.HasPrefix(name, "*") {
+			name = "*" + strings.TrimSpace(name[1:])
+		}
 	case '!':
 		return token{kind: tokenComment, raw: raw}, nil
 	case '=':
