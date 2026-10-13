@@ -2,7 +2,7 @@ lambda1: !code
   bash: echo -n "world"
 
 another:
-  lambda2:
-    bash: if [[ ${1} == 'true' ]]; then echo 'great {{thing}}'; exit 0; else echo NOK; exit 1; fi
+  lambda2: !code
+    bash: if [[ ${1} == 'true' ]]; then echo -n 'great {{thing}}'; exit 0; else echo NOK; exit 1; fi
 
 thing: stuff

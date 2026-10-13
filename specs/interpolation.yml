@@ -4,7 +4,7 @@ overview: |
   The tag's content MUST be a non-whitespace character sequence NOT containing
   the current closing delimiter.
 
-  This tag's content names the data to replace the tag.  A single period (`.`)
+  This tag's content names the data to replace the tag.  A single period (`.`)
   indicates that the item currently sitting atop the context stack should be
   used; otherwise, name resolution is as follows:
     1) Split the name on periods; the first part is the name to resolve, any
