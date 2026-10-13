@@ -119,6 +119,32 @@ func TestRenderPartialUsesConfiguredDelimiters(t *testing.T) {
 	}
 }
 
+func TestVerboseLookupUsesPartialPathAndLine(t *testing.T) {
+	dir := t.TempDir()
+	templatePath := filepath.Join(dir, "template.mustache")
+	partialPath := filepath.Join(dir, "partial.mustache")
+	if err := os.WriteFile(partialPath, []byte("first\n{{name}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var verbose strings.Builder
+	renderer, err := New(Options{Missing: MissingEmpty, Verbose: &verbose})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := renderer.Render(&output, strings.NewReader("{{>partial.mustache}}"), templatePath, map[string]any{"name": "Ada"}); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "first\nAda\n" {
+		t.Fatalf("rendered output mismatch: %q", output.String())
+	}
+	want := fmt.Sprintf("mustache: verbose: lookup %q in %s:2: found", "name", partialPath)
+	if !strings.Contains(verbose.String(), want) {
+		t.Fatalf("verbose output does not contain %q:\n%s", want, verbose.String())
+	}
+}
+
 func TestKeepMissingStandalonePartials(t *testing.T) {
 	renderer, err := New(Options{Missing: MissingKeep})
 	if err != nil {

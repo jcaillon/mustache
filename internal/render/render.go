@@ -26,6 +26,7 @@ type Options struct {
 	Missing    MissingBehavior
 	Partials   map[string]string
 	Delimiters [2]string
+	Verbose    io.Writer
 }
 
 type Renderer struct {
@@ -63,8 +64,13 @@ func (r *Renderer) Render(w io.Writer, template io.Reader, templatePath string, 
 			return fmt.Errorf("resolve template path: %w", err)
 		}
 	}
+	r.logf("rendering template %s", displayTemplatePath(templatePath))
 	l := newLexer(template, r.options.Delimiters[0], r.options.Delimiters[1])
-	return r.renderStream(w, l, []any{data}, templatePath)
+	err := r.renderStream(w, l, []any{data}, templatePath)
+	if err == nil {
+		r.logf("finished template %s", displayTemplatePath(templatePath))
+	}
+	return err
 }
 
 func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any, templatePath string) error {
@@ -83,7 +89,7 @@ func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any, templatePath
 				return err
 			}
 		case tokenVariable, tokenUnescaped:
-			if err := r.renderVariable(w, tok, stack); err != nil {
+			if err := r.renderVariable(w, tok, stack, templatePath); err != nil {
 				return err
 			}
 		case tokenSection, tokenInverted:
@@ -104,8 +110,9 @@ func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any, templatePath
 	}
 }
 
-func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any) error {
+func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any, templatePath string) error {
 	value, found := lookup(tok.name, stack)
+	r.logLookup(tok.name, templatePath, tok.line, found)
 	if !found {
 		switch r.options.Missing {
 		case MissingEmpty:
@@ -120,7 +127,7 @@ func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any) error {
 
 	text := stringify(value)
 	if lambda, ok := value.(BashLambda); ok {
-		output, err := runBashLambda(lambda)
+		output, err := r.runBashLambda(lambda)
 		if err != nil {
 			return &Error{Line: tok.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
 		}
@@ -174,6 +181,7 @@ func parseSection(l *lexer, opener token) (node, error) {
 
 func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath string) error {
 	value, found := lookup(n.token.name, stack)
+	r.logLookup(n.token.name, templatePath, n.token.line, found)
 	if !found {
 		switch r.options.Missing {
 		case MissingError:
@@ -191,7 +199,7 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 	}
 
 	if lambda, ok := value.(BashLambda); ok {
-		output, err := runBashLambda(lambda, rawNodes(n.children))
+		output, err := r.runBashLambda(lambda, rawNodes(n.children))
 		if n.token.kind == tokenInverted {
 			if err != nil {
 				return nil
@@ -225,7 +233,7 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 	return nil
 }
 
-func runBashLambda(lambda BashLambda, args ...string) ([]byte, error) {
+func (r *Renderer) runBashLambda(lambda BashLambda, args ...string) ([]byte, error) {
 	commandArgs := []string{"-c", string(lambda)}
 	if len(args) != 0 {
 		commandArgs = append(commandArgs, "-s", args[0])
@@ -234,7 +242,17 @@ func runBashLambda(lambda BashLambda, args ...string) ([]byte, error) {
 	if runtime.GOOS == "windows" {
 		cmd.Env = append(os.Environ(), "MSYS2_ARG_CONV_EXCL=*")
 	}
-	return cmd.Output()
+	r.logf("executing bash command %q", string(lambda))
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitCode := -1
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
+	r.logf("bash command stdout=%q stderr=%q exit_code=%d", stdout.String(), stderr.String(), exitCode)
+	return stdout.Bytes(), err
 }
 
 func rawNodes(nodes []node) string {
@@ -257,7 +275,7 @@ func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templateP
 				return err
 			}
 		case tokenVariable, tokenUnescaped:
-			if err := r.renderVariable(w, n.token, stack); err != nil {
+			if err := r.renderVariable(w, n.token, stack, templatePath); err != nil {
 				return err
 			}
 		case tokenSection, tokenInverted:
@@ -280,6 +298,7 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePa
 			return nil
 		}
 		value, found := lookup(name[1:], stack)
+		r.logLookup(name[1:], templatePath, tok.line, found)
 		if !found {
 			switch r.options.Missing {
 			case MissingError:
@@ -309,11 +328,35 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePa
 		}
 		return nil
 	}
+	r.logf("rendering partial %q from %s", name, displayTemplatePath(partialPath))
 	if tok.indent != "" {
 		partial = indent(partial, tok.indent)
 	}
 	l := newLexer(strings.NewReader(partial), r.options.Delimiters[0], r.options.Delimiters[1])
 	return r.renderStream(w, l, stack, partialPath)
+}
+
+func (r *Renderer) logLookup(name, templatePath string, line int, found bool) {
+	if r.options.Verbose != nil {
+		result := "missing"
+		if found {
+			result = "found"
+		}
+		r.logf("lookup %q in %s:%d: %s", name, displayTemplatePath(templatePath), line, result)
+	}
+}
+
+func (r *Renderer) logf(format string, args ...any) {
+	if r.options.Verbose != nil {
+		fmt.Fprintf(r.options.Verbose, "mustache: verbose: "+format+"\n", args...)
+	}
+}
+
+func displayTemplatePath(templatePath string) string {
+	if templatePath == "" {
+		return "<template>"
+	}
+	return templatePath
 }
 
 func (r *Renderer) LoadPartial(templatePath, name string) (string, string, bool, error) {

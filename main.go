@@ -26,6 +26,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	strict := flags.Bool("strict", false, "fail when a tag or partial file is missing")
 	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing delimiters separated by whitespace")
 	showVersion := flags.Bool("version", false, "print the version and exit")
+	var verbose bool
+	flags.BoolVar(&verbose, "verbose", false, "log rendering details to standard error")
+	flags.BoolVar(&verbose, "v", false, "log rendering details to standard error (shorthand)")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "Usage: mustache [OPTIONS] [--] <YAML> <FILE>")
 		flags.PrintDefaults()
@@ -62,15 +65,23 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	} else if *strict {
 		missing = render.MissingError
 	}
+	var verboseOutput io.Writer
+	if verbose {
+		verboseOutput = stderr
+	}
 	renderer, err := render.New(render.Options{
 		Missing:    missing,
 		Delimiters: [2]string{delimiters[0], delimiters[1]},
+		Verbose:    verboseOutput,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "mustache: %v\n", err)
 		return 2
 	}
 
+	if verbose {
+		fmt.Fprintf(stderr, "mustache: verbose: reading YAML from %s\n", flags.Arg(0))
+	}
 	data, closeData, err := openData(flags.Arg(0), stdin)
 	if err != nil {
 		fmt.Fprintf(stderr, "mustache: %v\n", err)
@@ -83,6 +94,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	decoder := yaml.NewDecoder(data)
 	rendered := false
 	decoded := false
+	documentNumber := 0
 	for {
 		var documentNode yaml.Node
 		err := decoder.Decode(&documentNode)
@@ -105,6 +117,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if err != nil {
 			fmt.Fprintf(stderr, "mustache: decode YAML %s: %v\n", flags.Arg(0), err)
 			return 1
+		}
+		documentNumber++
+		if verbose {
+			fmt.Fprintf(stderr, "mustache: verbose: decoded YAML document %d; opening template %s\n", documentNumber, flags.Arg(1))
 		}
 		template, err := os.Open(flags.Arg(1))
 		if err != nil {

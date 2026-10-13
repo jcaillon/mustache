@@ -231,6 +231,46 @@ func TestRunVersion(t *testing.T) {
 	}
 }
 
+func TestRunVerbose(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.yml")
+	template := filepath.Join(dir, "template.mustache")
+	if err := os.WriteFile(data, []byte("name: Ada\nscript: !code {bash: 'printf result; printf warning >&2'}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(template, []byte("Hello {{name}}\n{{script}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	absTemplate, err := filepath.Abs(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, option := range []string{"-v", "--verbose"} {
+		t.Run(option, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exit := run([]string{option, data, template}, strings.NewReader(""), &stdout, &stderr)
+			if exit != 0 || stdout.String() != "Hello Ada\nresult\n" {
+				t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+			}
+			for _, want := range []string{
+				"mustache: verbose: reading YAML from " + data,
+				"mustache: verbose: decoded YAML document 1; opening template " + template,
+				"mustache: verbose: rendering template " + absTemplate,
+				"mustache: verbose: lookup \"name\" in " + absTemplate + ":1: found",
+				"mustache: verbose: lookup \"script\" in " + absTemplate + ":2: found",
+				"mustache: verbose: executing bash command \"printf result; printf warning >&2\"",
+				"mustache: verbose: bash command stdout=\"result\" stderr=\"warning\" exit_code=0",
+				"mustache: verbose: finished template " + absTemplate,
+			} {
+				if !strings.Contains(stderr.String(), want) {
+					t.Errorf("stderr does not contain %q:\n%s", want, stderr.String())
+				}
+			}
+		})
+	}
+}
+
 func TestRunInvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")
