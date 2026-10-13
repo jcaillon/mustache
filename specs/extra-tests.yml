@@ -10,3 +10,10 @@ tests:
         # go:      'func(text string) string { if text == "{{x}}" { return "yes" } else { return "no" } }'
     template: "<{{#lambda}}{{x}}{{^boolean}}\n^{{/boolean}}{{! comment }}{{/lambda}}>"
     expected: "<yes>"
+
+  - name: Escape html
+    desc: HTML should be escaped in variables.
+    data:
+      x: '<&>"'''
+    template: "{{x}}"
+    expected: "&lt;&amp;&gt;&quot;&#39;"

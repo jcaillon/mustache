@@ -611,6 +611,7 @@ var htmlEscaper = strings.NewReplacer(
 	"<", "&lt;",
 	">", "&gt;",
 	"\"", "&quot;",
+	"'", "&#39;",
 )
 
 func escapeHTML(value string) string {
