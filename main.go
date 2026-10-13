@@ -101,8 +101,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if len(documentNode.Content) == 0 || documentNode.Content[0].Tag == "!!null" && documentNode.Content[0].Value == "" {
 			continue
 		}
-		var document any
-		if err := documentNode.Decode(&document); err != nil {
+		document, err := render.DecodeData(&documentNode)
+		if err != nil {
 			fmt.Fprintf(stderr, "mustache: decode YAML %s: %v\n", flags.Arg(0), err)
 			return 1
 		}

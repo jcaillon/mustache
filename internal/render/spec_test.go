@@ -36,9 +36,31 @@ func TestActiveSpecs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var spec specFile
-		if err := yaml.Unmarshal(contents, &spec); err != nil {
+		var root yaml.Node
+		if err := yaml.Unmarshal(contents, &root); err != nil {
 			t.Fatal(err)
+		}
+		var spec specFile
+		if err := root.Decode(&spec); err != nil {
+			t.Fatal(err)
+		}
+		for i := range spec.Tests {
+			dataNode := root.Content[0]
+			for j := 0; j < len(dataNode.Content); j += 2 {
+				if dataNode.Content[j].Value != "tests" {
+					continue
+				}
+				testNode := dataNode.Content[j+1].Content[i]
+				for k := 0; k < len(testNode.Content); k += 2 {
+					if testNode.Content[k].Value == "data" {
+						data, err := DecodeData(testNode.Content[k+1])
+						if err != nil {
+							t.Fatal(err)
+						}
+						spec.Tests[i].Data = data
+					}
+				}
+			}
 		}
 		for _, test := range spec.Tests {
 			test := test

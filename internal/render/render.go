@@ -2,12 +2,15 @@ package render
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 )
 
@@ -116,6 +119,17 @@ func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any) error {
 	}
 
 	text := stringify(value)
+	if lambda, ok := value.(BashLambda); ok {
+		output, err := runBashLambda(lambda)
+		if err != nil {
+			return &Error{Line: tok.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
+		}
+		var rendered strings.Builder
+		if err := r.renderStream(&rendered, newLexer(bytes.NewReader(output), "{{", "}}"), stack, "(lambda code for tag "+tok.name+")"); err != nil {
+			return err
+		}
+		text = rendered.String()
+	}
 	if tok.kind == tokenVariable {
 		text = escapeHTML(text)
 	}
@@ -176,6 +190,19 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 		}
 	}
 
+	if lambda, ok := value.(BashLambda); ok {
+		output, err := runBashLambda(lambda, rawNodes(n.children))
+		if n.token.kind == tokenInverted {
+			if err != nil {
+				return nil
+			}
+		}
+		if err != nil {
+			return nil
+		}
+		return r.renderStream(w, newLexer(bytes.NewReader(output), n.token.open, n.token.close), stack, templatePath)
+	}
+
 	if n.token.kind == tokenInverted {
 		if !truthy(value) {
 			return r.renderNodes(w, n.children, stack, templatePath)
@@ -196,6 +223,30 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 		return r.renderNodes(w, n.children, append(stack, value), templatePath)
 	}
 	return nil
+}
+
+func runBashLambda(lambda BashLambda, args ...string) ([]byte, error) {
+	commandArgs := []string{"-c", string(lambda)}
+	if len(args) != 0 {
+		commandArgs = append(commandArgs, "-s", args[0])
+	}
+	cmd := exec.Command("bash", commandArgs...)
+	if runtime.GOOS == "windows" {
+		cmd.Env = append(os.Environ(), "MSYS2_ARG_CONV_EXCL=*")
+	}
+	return cmd.Output()
+}
+
+func rawNodes(nodes []node) string {
+	var raw strings.Builder
+	for _, n := range nodes {
+		raw.WriteString(n.token.raw)
+		if n.token.kind == tokenSection || n.token.kind == tokenInverted {
+			raw.WriteString(rawNodes(n.children))
+			raw.WriteString(n.closeRaw)
+		}
+	}
+	return raw.String()
 }
 
 func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templatePath string) error {
@@ -400,6 +451,8 @@ type token struct {
 	raw    string
 	indent string
 	line   int
+	open   string
+	close  string
 }
 
 type lexer struct {
@@ -498,12 +551,13 @@ func (l *lexer) tokenize(input string, line int) ([]token, error) {
 }
 
 func (l *lexer) makeToken(raw, inner string, triple bool) (token, error) {
+	open, close := l.open, l.close
 	if triple {
 		name := strings.TrimSpace(inner)
 		if err := validateName(name); err != nil {
 			return token{}, err
 		}
-		return token{kind: tokenUnescaped, name: name, raw: raw}, nil
+		return token{kind: tokenUnescaped, name: name, raw: raw, open: open, close: close}, nil
 	}
 
 	trimmed := strings.TrimSpace(inner)
@@ -527,7 +581,7 @@ func (l *lexer) makeToken(raw, inner string, triple bool) (token, error) {
 			name = "*" + strings.TrimSpace(name[1:])
 		}
 	case '!':
-		return token{kind: tokenComment, raw: raw}, nil
+		return token{kind: tokenComment, raw: raw, open: open, close: close}, nil
 	case '=':
 		if !strings.HasSuffix(trimmed, "=") {
 			return token{}, fmt.Errorf("invalid set delimiter tag")
@@ -540,12 +594,12 @@ func (l *lexer) makeToken(raw, inner string, triple bool) (token, error) {
 			return token{}, err
 		}
 		l.open, l.close = fields[0], fields[1]
-		return token{kind: tokenDelimiter, raw: raw}, nil
+		return token{kind: tokenDelimiter, raw: raw, open: open, close: close}, nil
 	}
 	if err := validateName(name); err != nil {
 		return token{}, err
 	}
-	return token{kind: kind, name: name, raw: raw}, nil
+	return token{kind: kind, name: name, raw: raw, open: open, close: close}, nil
 }
 
 func standalone(tokens []token) []token {
