@@ -70,7 +70,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	renderer, err := render.New(render.Options{
 		Missing: missing,
-		LoadPartial: func(name string) (string, error) {
+		LoadPartial: func(name string) (string, bool, error) {
 			partialPath := filepath.FromSlash(name)
 			if !filepath.IsAbs(partialPath) {
 				partialPath = filepath.Join(filepath.Dir(templatePath), partialPath)
@@ -78,14 +78,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			contents, err := os.ReadFile(partialPath)
 			if os.IsNotExist(err) {
 				if *strict {
-					return "", fmt.Errorf("partial file not found: %s", partialPath)
+					return "", false, fmt.Errorf("partial file not found: %s", partialPath)
 				}
-				return "", nil
+				return "", false, nil
 			}
 			if err != nil {
-				return "", fmt.Errorf("read partial file %s: %w", partialPath, err)
+				return "", false, fmt.Errorf("read partial file %s: %w", partialPath, err)
 			}
-			return string(contents), nil
+			return string(contents), true, nil
 		},
 		Delimiters: [2]string{delimiters[0], delimiters[1]},
 	})

@@ -3,3 +3,4 @@ this
 {{^missingSection}}{{/missingSection}}
 {{#missingSection}}{{/missingSection}}
 {{missing.variable.here}}
+{{>missingPartial}}{{>*thing.missingPartial}}

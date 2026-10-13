@@ -20,7 +20,7 @@ const (
 type Options struct {
 	Missing     MissingBehavior
 	Partials    map[string]string
-	LoadPartial func(string) (string, error)
+	LoadPartial func(string) (string, bool, error)
 	Delimiters  [2]string
 }
 
@@ -237,13 +237,16 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any) error {
 	partial, ok := r.options.Partials[name]
 	if !ok && r.options.LoadPartial != nil {
 		var err error
-		partial, err = r.options.LoadPartial(name)
+		partial, ok, err = r.options.LoadPartial(name)
 		if err != nil {
 			return &Error{Line: tok.line, Err: err}
 		}
-		ok = true
 	}
 	if !ok {
+		if r.options.Missing == MissingKeep {
+			_, err := io.WriteString(w, tok.raw)
+			return err
+		}
 		return nil
 	}
 	if tok.indent != "" {

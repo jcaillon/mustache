@@ -142,6 +142,16 @@ func TestRunPartials(t *testing.T) {
 	if exit != 1 || stdout.String() != "before\n" || stderr.String() != wantError {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
+
+	if err := os.WriteFile(template, []byte("before {{> missing.mustache }} after"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	exit = run([]string{"--keep-missing-tags", data, template}, strings.NewReader(""), &stdout, &stderr)
+	if exit != 0 || stdout.String() != "before {{> missing.mustache }} after" || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
 }
 
 func TestRunStrictMissingDynamicPartialName(t *testing.T) {
