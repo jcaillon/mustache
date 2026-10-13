@@ -1,8 +1,0 @@
-Usage: mustache [OPTIONS] [--] <YAML> <FILE>
-  -keep-missing-tags
-    	keep missing tags in the output
-  -set-delimiters string
-    	opening and closing delimiters separated by whitespace (default "{{ }}")
-  -strict
-    	fail when a tag is missing from the data
-exit status 2

@@ -34,6 +34,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 2 {
+		fmt.Fprintln(stderr, "mustache: wrong number of arguments (expected 2, got", flags.NArg(), ")")
+		fmt.Fprintln(stderr, "Arguments provided:", strings.Join(args, " "))
 		flags.Usage()
 		return 2
 	}
