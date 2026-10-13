@@ -268,16 +268,18 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 
 func (r *Renderer) runBashLambda(lambda BashLambda, args ...string) ([]byte, error) {
 	commandArgs := []string{"-c", string(lambda)}
-	if len(args) != 0 {
-		commandArgs[1] = `set -- "$MUSTACHE_LAMBDA_ARG"; ` + commandArgs[1]
-		commandArgs = append(commandArgs, "-s")
+	hasArg := len(args) != 0
+	if hasArg {
+		if runtime.GOOS == "windows" {
+			// MSYS2 can alter argv, so pass the raw section through the environment.
+			commandArgs[1] = `set -- "$MUSTACHE_LAMBDA_ARG"; ` + commandArgs[1]
+		}
+		commandArgs = append(commandArgs, "-s", args[0])
 	}
 	cmd := exec.Command("bash", commandArgs...)
 	cmd.Env = os.Environ()
 	if runtime.GOOS == "windows" {
-		// on windows, msys2 will replace/strip some characters from argv,
-		// so we pass the argument via an environment variable instead
-		if len(args) != 0 {
+		if hasArg {
 			cmd.Env = append(cmd.Env, "MUSTACHE_LAMBDA_ARG="+args[0])
 		}
 		cmd.Env = append(cmd.Env, "MSYS2_ARG_CONV_EXCL=*")
