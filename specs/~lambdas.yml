@@ -11,13 +11,25 @@ overview: |
   as an arity 1 function, and invoked as such (passing a String containing the
   unprocessed section contents).  The returned value MUST be rendered against
   the current delimiters, then interpolated in place of the section.
+
+  Lambda code can be written in different programming languages using the !code tag.
+  Only a single programming language should be specified for a given lambda.
+  Valid languages include:
+  - `bash`
+
+  For bash lambdas:
+  - the code should be a valid bash command string.
+  - When used as an arity 0 function, the code will be invoked as such: `bash -c '<code>'`
+  - When used as an arity 1 function, the code will be invoked as such: `bash -c '<code>' -s '<section_contents>'`
+  - in both cases, <code> and <section_contents> should be properly quoted.
+  - if bash exits with a non-zero status, it should be treated as an error in case of a simple interpolation, and it should resolve to falsey in case of sections.
 tests:
   - name: Interpolation
     desc: A lambda's return value should be interpolated.
     data:
       lambda: !code
         bash:    'echo -n "world"'
-        go:      'func() string { return "world" }'
+        # go:      'func() string { return "world" }'
     template: "Hello, {{lambda}}!"
     expected: "Hello, world!"
 
@@ -27,7 +39,7 @@ tests:
       planet: "world"
       lambda: !code
         bash:    'echo -n "{{planet}}"'
-        go:      'func() string { return "{{planet}}" }'
+        # go:      'func() string { return "{{planet}}" }'
     template: "Hello, {{lambda}}!"
     expected: "Hello, world!"
 
@@ -37,7 +49,7 @@ tests:
       planet: "world"
       lambda: !code
         bash:    'echo -n "|planet| => {{planet}}"'
-        go:      'func() string { return "|planet| => {{planet}}" }'
+        # go:      'func() string { return "|planet| => {{planet}}" }'
     template: "{{= | | =}}\nHello, (|&lambda|)!"
     expected: "Hello, (|planet| => world)!"
 
@@ -46,7 +58,7 @@ tests:
     data:
       lambda: !code
         bash:    'if [[ ! -f my-test-state-file ]]; then echo -n "1"; : >my-test-state-file; elif [[ $(< my-test-state-file) == "" ]]; then echo -n "2"; echo 2 >my-test-state-file; else echo -n "3"; rm my-test-state-file; fi'
-        go:      'func() func() int { g := 0; return func() int { g++; return g } }()'
+        # go:      'func() func() int { g := 0; return func() int { g++; return g } }()'
     template: '{{lambda}} == {{{lambda}}} == {{lambda}}'
     expected: '1 == 2 == 3'
 
@@ -55,7 +67,7 @@ tests:
     data:
       lambda: !code
         bash:    'echo -n ">"'
-        go:      'func() string { return ">" }'
+        # go:      'func() string { return ">" }'
     template: "<{{lambda}}{{{lambda}}}"
     expected: "<&gt;>"
 
@@ -65,7 +77,7 @@ tests:
       x: 'Error!'
       lambda: !code
         bash:    'if [[ "$1" = "{{x}}" ]]; then echo -n "yes"; else echo -n "no"; fi'
-        go:      'func(text string) string { if text == "{{x}}" { return "yes" } else { return "no" } }'
+        # go:      'func(text string) string { if text == "{{x}}" { return "yes" } else { return "no" } }'
     template: "<{{#lambda}}{{x}}{{/lambda}}>"
     expected: "<yes>"
 
@@ -75,7 +87,7 @@ tests:
       planet: "Earth"
       lambda: !code
         bash:    'echo -n "${1}{{planet}}${1}"'
-        go:      'func(text string) string { return text + "{{planet}}" + text }'
+        # go:      'func(text string) string { return text + "{{planet}}" + text }'
     template: "<{{#lambda}}-{{/lambda}}>"
     expected: "<-Earth->"
 
@@ -85,7 +97,7 @@ tests:
       planet: "Earth"
       lambda: !code
         bash:    'echo -n "${1}{{planet}} => |planet|${1}"'
-        go:      'func(text string) string { return text + "{{planet}} => |planet|" + text }'
+        # go:      'func(text string) string { return text + "{{planet}} => |planet|" + text }'
     template: "{{= | | =}}<|#lambda|-|/lambda|>"
     expected: "<-{{planet}} => Earth->"
 
@@ -94,7 +106,7 @@ tests:
     data:
       lambda: !code
         bash:    'echo -n "${1}"'
-        go:      'func(text string) string { return "__" + text + "__" }'
+        # go:      'func(text string) string { return "__" + text + "__" }'
     template: '{{#lambda}}FILE{{/lambda}} != {{#lambda}}LINE{{/lambda}}'
     expected: '__FILE__ != __LINE__'
 
@@ -104,6 +116,6 @@ tests:
       static: 'static'
       lambda: !code
         bash:    'exit 1'
-        go:      'func(text string) bool { return false }'
+        # go:      'func(text string) bool { return false }'
     template: "<{{^lambda}}{{static}}{{/lambda}}>"
     expected: "<>"
