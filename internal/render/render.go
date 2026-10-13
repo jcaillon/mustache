@@ -23,10 +23,11 @@ const (
 )
 
 type Options struct {
-	Missing    MissingBehavior
-	Partials   map[string]string
-	Delimiters [2]string
-	Verbose    io.Writer
+	Missing           MissingBehavior
+	Partials          map[string]string
+	Delimiters        [2]string
+	Verbose           io.Writer
+	DisableHTMLEscape bool
 }
 
 type Renderer struct {
@@ -138,7 +139,7 @@ func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any, templateP
 		}
 		text = rendered.String()
 	}
-	if tok.kind == tokenVariable {
+	if tok.kind == tokenVariable && !r.options.DisableHTMLEscape {
 		text = escapeHTML(text)
 	}
 	_, err := io.WriteString(w, text)

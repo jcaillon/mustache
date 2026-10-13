@@ -119,6 +119,21 @@ func TestRenderPartialUsesConfiguredDelimiters(t *testing.T) {
 	}
 }
 
+func TestDisableHTMLEscape(t *testing.T) {
+	renderer, err := New(Options{Missing: MissingEmpty, DisableHTMLEscape: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output strings.Builder
+	if err := renderer.Render(&output, strings.NewReader("{{value}}"), "", map[string]any{"value": "<b>&</b>"}); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "<b>&</b>" {
+		t.Fatalf("rendered output mismatch: want %q, got %q", "<b>&</b>", output.String())
+	}
+}
+
 func TestVerboseLookupUsesPartialPathAndLine(t *testing.T) {
 	dir := t.TempDir()
 	templatePath := filepath.Join(dir, "template.mustache")

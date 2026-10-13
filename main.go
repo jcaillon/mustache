@@ -22,6 +22,7 @@ func main() {
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("mustache", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	disableHTMLEscape := flags.Bool("disable-html-escape", false, "do not HTML-escape tag values")
 	keepMissing := flags.Bool("keep-missing-tags", false, "keep missing tags in the output")
 	strict := flags.Bool("strict", false, "fail when a tag or partial file is missing")
 	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing delimiters separated by whitespace")
@@ -70,9 +71,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		verboseOutput = stderr
 	}
 	renderer, err := render.New(render.Options{
-		Missing:    missing,
-		Delimiters: [2]string{delimiters[0], delimiters[1]},
-		Verbose:    verboseOutput,
+		Missing:           missing,
+		Delimiters:        [2]string{delimiters[0], delimiters[1]},
+		Verbose:           verboseOutput,
+		DisableHTMLEscape: *disableHTMLEscape,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "mustache: %v\n", err)

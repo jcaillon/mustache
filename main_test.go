@@ -38,6 +38,20 @@ func TestRunEmptyInput(t *testing.T) {
 	}
 }
 
+func TestRunDisableHTMLEscape(t *testing.T) {
+	dir := t.TempDir()
+	template := filepath.Join(dir, "template.mustache")
+	if err := os.WriteFile(template, []byte("{{value}}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--disable-html-escape", "-", template}, strings.NewReader("value: '<b>text</b>'\n"), &stdout, &stderr)
+	if exit != 0 || stdout.String() != "<b>text</b>" || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunMissingTags(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")

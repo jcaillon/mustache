@@ -1,2 +1,2 @@
-mustache: render template cli-tests/ko-missing-section/template.mustache:2: missing tag "missingSection"
+mustache: render template C:\Users\jcaillon\data\repo\github.com\jcaillon\mustache\cli-tests\ko-missing-section\template.mustache:2: missing tag "missingSection"
 exit status 1
