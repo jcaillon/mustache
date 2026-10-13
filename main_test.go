@@ -259,7 +259,7 @@ func TestRunVerbose(t *testing.T) {
 				"mustache: verbose: rendering template " + absTemplate,
 				"mustache: verbose: lookup \"name\" in " + absTemplate + ":1: found",
 				"mustache: verbose: lookup \"script\" in " + absTemplate + ":2: found",
-				"mustache: verbose: executing bash command \"printf result; printf warning >&2\"",
+				"mustache: verbose: executing bash command args=[\"bash\" \"-c\" \"printf result; printf warning >&2\"]",
 				"mustache: verbose: bash command stdout=\"result\" stderr=\"warning\" exit_code=0",
 				"mustache: verbose: finished template " + absTemplate,
 			} {
@@ -268,6 +268,25 @@ func TestRunVerbose(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRunVerboseLogsBashSectionArguments(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.yml")
+	template := filepath.Join(dir, "template.mustache")
+	if err := os.WriteFile(data, []byte("script: !code {bash: 'printf %s \"$1\"'}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(template, []byte("{{#script}}hello world{{/script}}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--verbose", data, template}, strings.NewReader(""), &stdout, &stderr)
+	wantLog := "mustache: verbose: executing bash command args=[\"bash\" \"-c\" \"printf %s \\\"$1\\\"\" \"-s\" \"hello world\"]"
+	if exit != 0 || stdout.String() != "hello world" || !strings.Contains(stderr.String(), wantLog) {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
 }
 

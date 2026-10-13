@@ -242,7 +242,7 @@ func (r *Renderer) runBashLambda(lambda BashLambda, args ...string) ([]byte, err
 	if runtime.GOOS == "windows" {
 		cmd.Env = append(os.Environ(), "MSYS2_ARG_CONV_EXCL=*")
 	}
-	r.logf("executing bash command %q", string(lambda))
+	r.logf("executing bash command args=%q", cmd.Args)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
