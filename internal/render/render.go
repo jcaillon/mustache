@@ -68,14 +68,14 @@ func (r *Renderer) Render(w io.Writer, template io.Reader, templatePath string, 
 	}
 	r.logf("rendering template %s", displayTemplatePath(templatePath))
 	l := newLexer(template, r.options.Delimiters[0], r.options.Delimiters[1])
-	err := r.renderStream(w, l, []any{data}, templatePath)
+	err := r.renderStream(w, l, []any{data}, templatePath, nil)
 	if err == nil {
 		r.logf("finished template %s", displayTemplatePath(templatePath))
 	}
 	return err
 }
 
-func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any, templatePath string) error {
+func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any, templatePath string, overrides map[string]block) error {
 	for {
 		tok, err := l.next()
 		if errors.Is(err, io.EOF) {
@@ -94,18 +94,18 @@ func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any, templatePath
 			if err := r.renderVariable(w, tok, stack, templatePath); err != nil {
 				return err
 			}
-		case tokenSection, tokenInverted:
+		case tokenSection, tokenInverted, tokenParent, tokenBlock:
 			node, err := parseSection(l, tok)
 			if err != nil {
 				return err
 			}
-			if err := r.renderSection(w, node, stack, templatePath); err != nil {
+			if err := r.renderNode(w, node, stack, templatePath, overrides); err != nil {
 				return err
 			}
 		case tokenEnd:
 			return fmt.Errorf("unexpected closing section %q", tok.name)
 		case tokenPartial:
-			if err := r.renderPartial(w, tok, stack, templatePath); err != nil {
+			if err := r.renderPartial(w, tok, stack, templatePath, overrides); err != nil {
 				return err
 			}
 		}
@@ -134,7 +134,7 @@ func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any, templateP
 			return &Error{File: templatePath, Line: tok.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
 		}
 		var rendered strings.Builder
-		if err := r.renderStream(&rendered, newLexer(bytes.NewReader(output), "{{", "}}"), stack, "(lambda code for tag "+tok.name+")"); err != nil {
+		if err := r.renderStream(&rendered, newLexer(bytes.NewReader(output), "{{", "}}"), stack, "(lambda code for tag "+tok.name+")", nil); err != nil {
 			return err
 		}
 		text = rendered.String()
@@ -167,9 +167,27 @@ func parseSection(l *lexer, opener token) (node, error) {
 				return node{}, fmt.Errorf("section %q closed by %q", opener.name, tok.name)
 			}
 			n.closeRaw = tok.raw
+			if opener.kind == tokenBlock && strings.HasSuffix(opener.raw, "\n") && !strings.HasSuffix(tok.raw, "\n") {
+				next, err := l.next()
+				if err == nil && next.kind == tokenText && (strings.HasPrefix(next.raw, "\n") || strings.HasPrefix(next.raw, "\r\n")) {
+					newline := "\n"
+					if strings.HasPrefix(next.raw, "\r\n") {
+						newline = "\r\n"
+					}
+					n.children = append(n.children, node{token: token{kind: tokenText, raw: newline}})
+					next.raw = strings.TrimPrefix(next.raw, newline)
+					if next.raw != "" {
+						l.queue = append([]token{next}, l.queue...)
+					}
+				} else if err == nil {
+					l.queue = append([]token{next}, l.queue...)
+				} else if !errors.Is(err, io.EOF) {
+					return node{}, err
+				}
+			}
 			return n, nil
 		}
-		if tok.kind == tokenSection || tok.kind == tokenInverted {
+		if tok.kind == tokenSection || tok.kind == tokenInverted || tok.kind == tokenParent || tok.kind == tokenBlock {
 			child, err := parseSection(l, tok)
 			if err != nil {
 				return node{}, err
@@ -181,7 +199,23 @@ func parseSection(l *lexer, opener token) (node, error) {
 	}
 }
 
-func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath string) error {
+type block struct {
+	children []node
+	indent   string
+}
+
+func (r *Renderer) renderNode(w io.Writer, n node, stack []any, templatePath string, overrides map[string]block) error {
+	switch n.token.kind {
+	case tokenParent:
+		return r.renderParent(w, n, stack, templatePath, overrides)
+	case tokenBlock:
+		return r.renderBlock(w, n, stack, templatePath, overrides)
+	default:
+		return r.renderSection(w, n, stack, templatePath, overrides)
+	}
+}
+
+func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath string, overrides map[string]block) error {
 	value, found := lookup(n.token.name, stack)
 	r.logLookup(n.token.name, templatePath, n.token.line, found)
 	if !found {
@@ -192,7 +226,7 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 			if _, err := io.WriteString(w, n.token.raw); err != nil {
 				return err
 			}
-			if err := r.renderNodes(w, n.children, stack, templatePath); err != nil {
+			if err := r.renderNodes(w, n.children, stack, templatePath, overrides); err != nil {
 				return err
 			}
 			_, err := io.WriteString(w, n.closeRaw)
@@ -210,12 +244,12 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 		if err != nil {
 			return nil
 		}
-		return r.renderStream(w, newLexer(bytes.NewReader(output), n.token.open, n.token.close), stack, templatePath)
+		return r.renderStream(w, newLexer(bytes.NewReader(output), n.token.open, n.token.close), stack, templatePath, overrides)
 	}
 
 	if n.token.kind == tokenInverted {
 		if !truthy(value) {
-			return r.renderNodes(w, n.children, stack, templatePath)
+			return r.renderNodes(w, n.children, stack, templatePath, overrides)
 		}
 		return nil
 	}
@@ -223,14 +257,14 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 	items, isList := asList(value)
 	if isList {
 		for _, item := range items {
-			if err := r.renderNodes(w, n.children, append(stack, item), templatePath); err != nil {
+			if err := r.renderNodes(w, n.children, append(stack, item), templatePath, overrides); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 	if truthy(value) {
-		return r.renderNodes(w, n.children, append(stack, value), templatePath)
+		return r.renderNodes(w, n.children, append(stack, value), templatePath, overrides)
 	}
 	return nil
 }
@@ -268,7 +302,7 @@ func rawNodes(nodes []node) string {
 	var raw strings.Builder
 	for _, n := range nodes {
 		raw.WriteString(n.token.raw)
-		if n.token.kind == tokenSection || n.token.kind == tokenInverted {
+		if n.token.kind == tokenSection || n.token.kind == tokenInverted || n.token.kind == tokenParent || n.token.kind == tokenBlock {
 			raw.WriteString(rawNodes(n.children))
 			raw.WriteString(n.closeRaw)
 		}
@@ -276,7 +310,7 @@ func rawNodes(nodes []node) string {
 	return raw.String()
 }
 
-func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templatePath string) error {
+func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templatePath string, overrides map[string]block) error {
 	for _, n := range nodes {
 		switch n.token.kind {
 		case tokenText:
@@ -287,12 +321,12 @@ func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templateP
 			if err := r.renderVariable(w, n.token, stack, templatePath); err != nil {
 				return err
 			}
-		case tokenSection, tokenInverted:
-			if err := r.renderSection(w, n, stack, templatePath); err != nil {
+		case tokenSection, tokenInverted, tokenParent, tokenBlock:
+			if err := r.renderNode(w, n, stack, templatePath, overrides); err != nil {
 				return err
 			}
 		case tokenPartial:
-			if err := r.renderPartial(w, n.token, stack, templatePath); err != nil {
+			if err := r.renderPartial(w, n.token, stack, templatePath, overrides); err != nil {
 				return err
 			}
 		}
@@ -300,7 +334,7 @@ func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templateP
 	return nil
 }
 
-func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePath string) error {
+func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePath string, overrides map[string]block) error {
 	name := tok.name
 	if strings.HasPrefix(name, "*") {
 		if strings.HasPrefix(name, "**") {
@@ -321,14 +355,9 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePa
 		}
 		name = stringify(value)
 	}
-	partial, ok := r.options.Partials[name]
-	partialPath := templatePath
-	if !ok && templatePath != "" {
-		var err error
-		partial, partialPath, ok, err = r.LoadPartial(templatePath, name)
-		if err != nil {
-			return &Error{File: templatePath, Line: tok.line, Err: err}
-		}
+	partial, partialPath, ok, err := r.loadPartial(templatePath, name)
+	if err != nil {
+		return &Error{File: templatePath, Line: tok.line, Err: err}
 	}
 	if !ok {
 		if r.options.Missing == MissingKeep {
@@ -342,7 +371,108 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePa
 		partial = indent(partial, tok.indent)
 	}
 	l := newLexer(strings.NewReader(partial), r.options.Delimiters[0], r.options.Delimiters[1])
-	return r.renderStream(w, l, stack, partialPath)
+	return r.renderStream(w, l, stack, partialPath, overrides)
+}
+
+func (r *Renderer) renderParent(w io.Writer, n node, stack []any, templatePath string, overrides map[string]block) error {
+	partial, partialPath, ok, err := r.loadPartial(templatePath, n.token.name)
+	if err != nil {
+		return &Error{File: templatePath, Line: n.token.line, Err: err}
+	}
+	if !ok {
+		if r.options.Missing == MissingKeep {
+			_, err = io.WriteString(w, n.token.raw+rawNodes(n.children)+n.closeRaw)
+			return err
+		}
+		return nil
+	}
+
+	merged := make(map[string]block, len(overrides))
+	for name, value := range overrides {
+		merged[name] = value
+	}
+	for _, child := range n.children {
+		if child.token.kind == tokenBlock {
+			if _, exists := merged[child.token.name]; !exists {
+				merged[child.token.name] = makeBlock(child)
+			}
+		}
+	}
+	if n.token.indent != "" {
+		partial = indent(partial, n.token.indent)
+	}
+	r.logf("rendering parent %q from %s", n.token.name, displayTemplatePath(partialPath))
+	return r.renderStream(w, newLexer(strings.NewReader(partial), r.options.Delimiters[0], r.options.Delimiters[1]), stack, partialPath, merged)
+}
+
+func (r *Renderer) renderBlock(w io.Writer, n node, stack []any, templatePath string, overrides map[string]block) error {
+	defaultBlock := makeBlock(n)
+	selected, ok := overrides[n.token.name]
+	if !ok {
+		selected = defaultBlock
+	}
+	var output strings.Builder
+	if err := r.renderNodes(&output, selected.children, stack, templatePath, overrides); err != nil {
+		return err
+	}
+	text := dedent(output.String(), selected.indent)
+	if strings.HasSuffix(rawNodes(defaultBlock.children), "\n") && !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	intrinsic := strings.TrimPrefix(defaultBlock.indent, n.token.indent)
+	_, err := io.WriteString(w, indent(text, n.token.indent+intrinsic))
+	return err
+}
+
+func makeBlock(n node) block {
+	children := append([]node(nil), n.children...)
+	if len(children) != 0 && children[0].token.kind == tokenText {
+		raw := children[0].token.raw
+		if newline := strings.IndexByte(raw, '\n'); newline >= 0 && strings.Trim(raw[:newline], " \t\r") == "" {
+			children[0].token.raw = raw[newline+1:]
+			if children[0].token.raw == "" {
+				children = children[1:]
+			}
+		}
+	}
+	return block{children: children, indent: commonIndent(rawNodes(children))}
+}
+
+func commonIndent(s string) string {
+	var common string
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		prefix := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		if common == "" {
+			common = prefix
+			continue
+		}
+		for !strings.HasPrefix(prefix, common) {
+			common = common[:len(common)-1]
+		}
+	}
+	return common
+}
+
+func dedent(s, prefix string) string {
+	if prefix == "" {
+		return s
+	}
+	lines := strings.SplitAfter(s, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimPrefix(lines[i], prefix)
+	}
+	return strings.Join(lines, "")
+}
+
+func (r *Renderer) loadPartial(templatePath, name string) (string, string, bool, error) {
+	partial, ok := r.options.Partials[name]
+	if ok || templatePath == "" {
+		return partial, templatePath, ok, nil
+	}
+	return r.LoadPartial(templatePath, name)
 }
 
 func (r *Renderer) logLookup(name, templatePath string, line int, found bool) {
@@ -477,7 +607,6 @@ var htmlEscaper = strings.NewReplacer(
 	"<", "&lt;",
 	">", "&gt;",
 	"\"", "&quot;",
-	"'", "&#39;",
 )
 
 func escapeHTML(value string) string {
@@ -494,6 +623,8 @@ const (
 	tokenInverted
 	tokenEnd
 	tokenPartial
+	tokenParent
+	tokenBlock
 	tokenComment
 	tokenDelimiter
 )
@@ -633,6 +764,10 @@ func (l *lexer) makeToken(raw, inner string, triple bool) (token, error) {
 		if strings.HasPrefix(name, "*") {
 			name = "*" + strings.TrimSpace(name[1:])
 		}
+	case '<':
+		kind, name = tokenParent, strings.TrimSpace(trimmed[1:])
+	case '$':
+		kind, name = tokenBlock, strings.TrimSpace(trimmed[1:])
 	case '!':
 		return token{kind: tokenComment, raw: raw, open: open, close: close}, nil
 	case '=':
@@ -664,13 +799,39 @@ func standalone(tokens []token) []token {
 			continue
 		}
 		switch tok.kind {
-		case tokenSection, tokenInverted, tokenEnd, tokenPartial, tokenComment, tokenDelimiter:
+		case tokenSection, tokenInverted, tokenEnd, tokenPartial, tokenParent, tokenBlock, tokenComment, tokenDelimiter:
 			eligible++
 		default:
 			return tokens
 		}
 	}
-	if eligible != 1 {
+	paired := eligible == 2 && len(tokens) >= 2
+	structured := eligible > 1
+	direction := tokenKind(0)
+	if paired {
+		var tags []token
+		for _, tok := range tokens {
+			if tok.kind != tokenText {
+				tags = append(tags, tok)
+			}
+		}
+		paired = (tags[0].kind == tokenParent || tags[0].kind == tokenBlock) && tags[1].kind == tokenEnd && tags[0].name == tags[1].name
+	}
+	for _, tok := range tokens {
+		if tok.kind == tokenText {
+			continue
+		}
+		kind := tok.kind
+		if kind == tokenParent || kind == tokenBlock {
+			kind = tokenBlock
+		}
+		if kind != tokenBlock && kind != tokenEnd || direction != 0 && direction != kind {
+			structured = false
+			break
+		}
+		direction = kind
+	}
+	if eligible != 1 && !paired && !structured {
 		return tokens
 	}
 	whitespace := strings.TrimSuffix(text.String(), "\n")
@@ -694,7 +855,7 @@ func standalone(tokens []token) []token {
 				tok.raw += adjacent.raw
 			}
 		}
-		if tok.kind == tokenPartial {
+		if tok.kind == tokenPartial || tok.kind == tokenParent || tok.kind == tokenBlock {
 			tok.indent = whitespace
 		}
 		result = append(result, tok)

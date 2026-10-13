@@ -1,0 +1,179 @@
+overview: |
+  Extra tests not present in the original spec.
+tests:
+  - name: Documentation - Variables
+    desc: Variables are escaped, missing variables are empty, and triple mustaches are unescaped.
+    data:
+      name: Chris
+      company: <b>GitHub</b>
+    template: "* {{name}}\n* {{age}}\n* {{company}}\n* {{{company}}}"
+    expected: "* Chris\n* \n* &lt;b&gt;GitHub&lt;/b&gt;\n* <b>GitHub</b>"
+
+  - name: Documentation - Ampersand
+    desc: Ampersand tags render variables without HTML escaping.
+    data:
+      company: <b>GitHub</b>
+    template: "{{& company}}"
+    expected: "<b>GitHub</b>"
+
+  - name: Documentation - Dotted Names
+    desc: Dotted names resolve nested keys without falling back after the first key.
+    data:
+      client:
+        name: Chris & Friends
+        age: 50
+      company:
+        name: <b>GitHub</b>
+    template: "* {{client.name}}\n* {{age}}\n* {{client.company.name}}\n* {{{company.name}}}"
+    expected: "* Chris &amp; Friends\n* \n* \n* <b>GitHub</b>"
+
+  - name: Documentation - Implicit Iterator
+    desc: A dot interpolates the current context as a whole.
+    data: Hello!
+    template: "* {{.}}"
+    expected: "* Hello!"
+
+  - name: Documentation - Variable Lambda
+    desc: A variable lambda result is rendered as a Mustache template against the current context.
+    data:
+      year: 1970
+      month: 1
+      day: 1
+      today: !code
+        bash: "printf '{{year}}-{{month}}-{{day}}'"
+    template: "* {{today}}"
+    expected: "* 1970-1-1"
+
+  - name: Documentation - False Section
+    desc: False values prevent section contents from rendering.
+    data:
+      person: false
+    template: "Shown.\n{{#person}}\n  Never shown!\n{{/person}}"
+    expected: "Shown.\n"
+
+  - name: Documentation - Object List Section
+    desc: Non-empty lists render a section once per object with that object as context.
+    data:
+      repo:
+        - name: resque
+        - name: hub
+        - name: rip
+    template: "{{#repo}}\n  <b>{{name}}</b>\n{{/repo}}"
+    expected: "  <b>resque</b>\n  <b>hub</b>\n  <b>rip</b>\n"
+
+  - name: Documentation - Scalar List Section
+    desc: The implicit iterator renders each scalar item in a list section.
+    data:
+      repo: [resque, hub, rip]
+    template: "{{#repo}}\n  <b>{{.}}</b>\n{{/repo}}"
+    expected: "  <b>resque</b>\n  <b>hub</b>\n  <b>rip</b>\n"
+
+  - name: Documentation - Section Lambda
+    desc: A section lambda receives raw content and its result is rendered in the current context.
+    data:
+      name: Willy
+      wrapped: !code
+        bash: "printf '<b>%s</b>' \"$1\""
+    template: "{{#wrapped}}{{name}} is awesome.{{/wrapped}}"
+    expected: "<b>Willy is awesome.</b>"
+
+  - name: Documentation - Non-False Section
+    desc: A non-false object becomes the context for one rendering of a section.
+    data:
+      person?:
+        name: Jon
+    template: "{{#person?}}\n  Hi {{name}}!\n{{/person?}}"
+    expected: "  Hi Jon!\n"
+
+  - name: Documentation - Inverted Section
+    desc: Inverted sections render once for an empty list.
+    data:
+      repo: []
+    template: "{{#repo}}\n  <b>{{name}}</b>\n{{/repo}}\n{{^repo}}\n  No repos :(\n{{/repo}}"
+    expected: "  No repos :(\n"
+
+  - name: Documentation - Comment
+    desc: Comments are ignored while surrounding content is preserved.
+    data: {}
+    template: "<h1>Today{{! ignore me }}.</h1>"
+    expected: "<h1>Today.</h1>"
+
+  - name: Documentation - Multiline Comment
+    desc: Comments may contain newlines.
+    data: {}
+    template: "before{{! ignore\nthis }}after"
+    expected: "beforeafter"
+
+  - name: Documentation - Partial
+    desc: Partials inherit the calling context inside a list section.
+    data:
+      names:
+        - name: Alice
+        - name: Bob
+    partials:
+      user: "<strong>{{name}}</strong>\n"
+    template: "<h2>Names</h2>\n{{#names}}\n  {{> user}}\n{{/names}}"
+    expected: "<h2>Names</h2>\n  <strong>Alice</strong>\n  <strong>Bob</strong>\n"
+
+  - name: Documentation - Dynamic Partial Name
+    desc: Dynamic partial names resolve a partial name from the current context.
+    data:
+      dynamic: world
+    partials:
+      world: everyone!
+    template: "Hello {{>*dynamic}}"
+    expected: "Hello everyone!"
+
+  - name: Documentation - Set Delimiter
+    desc: Set delimiter tags switch to custom delimiters and can switch back.
+    data:
+      default_tags: first
+      erb_style_tags: second
+      default_tags_again: third
+    template: "* {{default_tags}}\n{{=<% %>=}}\n* <% erb_style_tags %>\n<%={{ }}=%>\n* {{ default_tags_again }}"
+    expected: "* first\n* second\n* third"
+
+  - name: Documentation - Blocks
+    desc: Blocks render their default contents when they are not overridden.
+    data: {}
+    template: |
+      <h1>{{$title}}The News of Today{{/title}}</h1>
+      {{$body}}
+      <p>Nothing special happened.</p>
+      {{/body}}
+    expected: |
+      <h1>The News of Today</h1>
+      <p>Nothing special happened.</p>
+
+  - name: Documentation - Parents
+    desc: Parents expand another template and override its named blocks.
+    data:
+      headlines:
+        - A pug's handler grew mustaches.
+        - What an exciting day!
+    partials:
+      article: |
+        <h1>{{$title}}The News of Today{{/title}}</h1>
+        {{$body}}
+        <p>Nothing special happened.</p>
+        {{/body}}
+    template: |
+      {{<article}}
+        Never shown
+        {{$body}}
+          {{#headlines}}
+          <p>{{.}}</p>
+          {{/headlines}}
+        {{/body}}
+      {{/article}}
+
+      {{<article}}
+        {{$title}}Yesterday{{/title}}
+      {{/article}}
+    expected: |
+      <h1>The News of Today</h1>
+      <p>A pug's handler grew mustaches.</p>
+      <p>What an exciting day!</p>
+
+      <h1>Yesterday</h1>
+      <p>Nothing special happened.</p>
