@@ -182,6 +182,29 @@ func TestRunNestedPartialsRelativeToCurrentTemplate(t *testing.T) {
 	}
 }
 
+func TestRunErrorReportsNestedPartialFile(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.yml")
+	template := filepath.Join(dir, "template.mustache")
+	partial := filepath.Join(dir, "partial.mustache")
+	for path, contents := range map[string]string{
+		data:     "{}\n",
+		template: "{{>partial.mustache}}",
+		partial:  "first\n{{missing}}",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--strict", data, template}, strings.NewReader(""), &stdout, &stderr)
+	wantError := fmt.Sprintf("mustache: render template %s:2: missing tag %q\n", partial, "missing")
+	if exit != 1 || stdout.String() != "first\n" || stderr.String() != wantError {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunStrictMissingDynamicPartialName(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")

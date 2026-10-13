@@ -1,0 +1,2 @@
+mustache: render template cli-tests/ko-missing-variable-in-partial/template.mustache:1: missing tag "missing.variable.here"
+exit status 1

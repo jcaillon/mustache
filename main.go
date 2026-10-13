@@ -132,7 +132,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if err != nil {
 			var renderErr *render.Error
 			if errors.As(err, &renderErr) {
-				fmt.Fprintf(stderr, "mustache: render template %s:%d: %v\n", flags.Arg(1), renderErr.Line, renderErr.Err)
+				fmt.Fprintf(stderr, "mustache: render template %s:%d: %v\n", renderErr.File, renderErr.Line, renderErr.Err)
 			} else {
 				fmt.Fprintf(stderr, "mustache: render template: %v\n", err)
 			}

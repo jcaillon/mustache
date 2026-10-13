@@ -34,6 +34,7 @@ type Renderer struct {
 }
 
 type Error struct {
+	File string
 	Line int
 	Err  error
 }
@@ -121,7 +122,7 @@ func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any, templateP
 			_, err := io.WriteString(w, tok.raw)
 			return err
 		default:
-			return &Error{Line: tok.line, Err: fmt.Errorf("missing tag %q", tok.name)}
+			return &Error{File: templatePath, Line: tok.line, Err: fmt.Errorf("missing tag %q", tok.name)}
 		}
 	}
 
@@ -129,7 +130,7 @@ func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any, templateP
 	if lambda, ok := value.(BashLambda); ok {
 		output, err := r.runBashLambda(lambda)
 		if err != nil {
-			return &Error{Line: tok.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
+			return &Error{File: templatePath, Line: tok.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
 		}
 		var rendered strings.Builder
 		if err := r.renderStream(&rendered, newLexer(bytes.NewReader(output), "{{", "}}"), stack, "(lambda code for tag "+tok.name+")"); err != nil {
@@ -185,7 +186,7 @@ func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath 
 	if !found {
 		switch r.options.Missing {
 		case MissingError:
-			return &Error{Line: n.token.line, Err: fmt.Errorf("missing tag %q", n.token.name)}
+			return &Error{File: templatePath, Line: n.token.line, Err: fmt.Errorf("missing tag %q", n.token.name)}
 		case MissingKeep:
 			if _, err := io.WriteString(w, n.token.raw); err != nil {
 				return err
@@ -309,7 +310,7 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePa
 		if !found {
 			switch r.options.Missing {
 			case MissingError:
-				return &Error{Line: tok.line, Err: fmt.Errorf("missing tag %q", name[1:])}
+				return &Error{File: templatePath, Line: tok.line, Err: fmt.Errorf("missing tag %q", name[1:])}
 			case MissingKeep:
 				_, err := io.WriteString(w, tok.raw)
 				return err
@@ -325,7 +326,7 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePa
 		var err error
 		partial, partialPath, ok, err = r.LoadPartial(templatePath, name)
 		if err != nil {
-			return &Error{Line: tok.line, Err: err}
+			return &Error{File: templatePath, Line: tok.line, Err: err}
 		}
 	}
 	if !ok {
@@ -375,6 +376,7 @@ func (r *Renderer) LoadPartial(templatePath, name string) (string, string, bool,
 	if err != nil {
 		return "", "", false, fmt.Errorf("resolve partial path: %w", err)
 	}
+	// TODO: replace this, we read the whole file into memory instead of streaming it
 	contents, err := os.ReadFile(partialPath)
 	if os.IsNotExist(err) {
 		if r.options.Missing == MissingError {
