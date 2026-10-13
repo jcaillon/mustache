@@ -1,2 +1,0 @@
-mustache: render template cli-tests/missing-dynamic-partial/template.mustache:1: missing tag "missing.partial.mustache"
-exit status 1

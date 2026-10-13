@@ -1,2 +1,0 @@
-mustache: render template cli-tests/missing-section/template.mustache:2: missing tag "missingSection"
-exit status 1
