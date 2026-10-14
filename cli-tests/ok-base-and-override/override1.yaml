@@ -1,0 +1,9 @@
+
+key:
+  thing:
+    third: override1
+    arrayOverride1:
+      - override1-1
+      - override1-2
+expectOverride1: override1
+expectOverride2: override1

@@ -24,6 +24,16 @@ type specTest struct {
 	Partials map[string]string `yaml:"partials"`
 }
 
+func TestDecodeSingleDocumentAcceptsEmptyDocument(t *testing.T) {
+	for _, input := range []string{"", " \n", "---\n"} {
+		document, err := decodeSingleDocument(strings.NewReader(input), "data.yml")
+		values, ok := document.(map[any]any)
+		if err != nil || !ok || len(values) != 0 {
+			t.Fatalf("input=%q document=%#v err=%v", input, document, err)
+		}
+	}
+}
+
 func TestActiveSpecs(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "specs", "*.yml"))
 	if err != nil {

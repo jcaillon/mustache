@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/jcaillon/mustache/internal/render"
@@ -22,8 +21,10 @@ func main() {
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("mustache", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	baseData := flags.String("base-data", "", "comma-separated YAML files merged before the main data")
 	disableHTMLEscape := flags.Bool("disable-html-escape", false, "do not HTML-escape tag values")
 	keepMissing := flags.Bool("keep-missing-tags", false, "keep missing tags in the output")
+	overrideData := flags.String("override-data", "", "comma-separated YAML files merged after the main data")
 	strict := flags.Bool("strict", false, "fail when a tag or partial file is missing")
 	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing delimiters separated by whitespace")
 	showVersion := flags.Bool("version", false, "print the version and exit")
@@ -80,9 +81,19 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "mustache: %v\n", err)
 		return 2
 	}
+	baseDocuments, err := render.LoadDataFiles(*baseData)
+	if err != nil {
+		fmt.Fprintf(stderr, "mustache: %v\n", err)
+		return 1
+	}
+	overrideDocuments, err := render.LoadDataFiles(*overrideData)
+	if err != nil {
+		fmt.Fprintf(stderr, "mustache: %v\n", err)
+		return 1
+	}
 
 	if verbose {
-		fmt.Fprintf(stderr, "mustache: verbose: reading YAML from %s\n", flags.Arg(0))
+		fmt.Fprintf(verboseOutput, "mustache: verbose: reading YAML from %s\n", flags.Arg(0))
 	}
 	data, closeData, err := openData(flags.Arg(0), stdin)
 	if err != nil {
@@ -108,11 +119,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			err = nil
 		}
 		if err != nil {
-			fmt.Fprintf(stderr, "mustache: decode YAML %s\n", formatYAMLParserError(flags.Arg(0), err))
+			fmt.Fprintf(stderr, "mustache: decode YAML %s\n", render.FormatYAMLParserError(flags.Arg(0), err))
 			return 1
 		}
 		decoded = true
-		if len(documentNode.Content) == 0 || documentNode.Content[0].Tag == "!!null" && documentNode.Content[0].Value == "" {
+		if render.EmptyYAMLDocument(&documentNode) {
 			continue
 		}
 		document, err := render.DecodeData(&documentNode)
@@ -120,16 +131,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "mustache: decode YAML %s: %v\n", flags.Arg(0), err)
 			return 1
 		}
+		var merged any
+		for _, base := range baseDocuments {
+			merged = render.MergeData(merged, base)
+		}
+		merged = render.MergeData(merged, document)
+		for _, override := range overrideDocuments {
+			merged = render.MergeData(merged, override)
+		}
 		documentNumber++
 		if verbose {
-			fmt.Fprintf(stderr, "mustache: verbose: decoded YAML document %d; opening template %s\n", documentNumber, flags.Arg(1))
+			fmt.Fprintf(verboseOutput, "mustache: verbose: decoded YAML document %d; opening template %s\n", documentNumber, flags.Arg(1))
 		}
 		template, err := os.Open(flags.Arg(1))
 		if err != nil {
 			fmt.Fprintf(stderr, "mustache: open template: %v\n", err)
 			return 1
 		}
-		err = renderer.Render(stdout, template, flags.Arg(1), document)
+		err = renderer.Render(stdout, template, flags.Arg(1), merged)
 		closeErr := template.Close()
 		if err != nil {
 			var renderErr *render.Error
@@ -151,25 +170,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
-}
-
-func formatYAMLParserError(name string, err error) string {
-	const prefix = "yaml: line "
-
-	message := err.Error()
-	rest, ok := strings.CutPrefix(message, prefix)
-	if !ok {
-		return fmt.Sprintf("%s: %s", name, message)
-	}
-	lineText, message, ok := strings.Cut(rest, ": ")
-	if !ok {
-		return fmt.Sprintf("%s: %s", name, err)
-	}
-	line, parseErr := strconv.Atoi(lineText)
-	if parseErr != nil {
-		return fmt.Sprintf("%s: %s", name, err)
-	}
-	return fmt.Sprintf("%s:%d: %s", name, line+1, message)
 }
 
 func openData(name string, stdin io.Reader) (io.Reader, *os.File, error) {

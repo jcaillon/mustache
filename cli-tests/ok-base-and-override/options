@@ -1,0 +1,1 @@
+--base-data cli-tests/ok-base-and-override/base1.yaml,cli-tests/ok-base-and-override/base2.yaml,cli-tests/ok-base-and-override/base3.yaml --override-data cli-tests/ok-base-and-override/override1.yaml,cli-tests/ok-base-and-override/override2.yaml

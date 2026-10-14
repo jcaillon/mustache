@@ -23,6 +23,68 @@ func TestRunMultipleDocuments(t *testing.T) {
 	}
 }
 
+func TestRunMergesBaseMainAndOverrideData(t *testing.T) {
+	dir := t.TempDir()
+	baseOne := filepath.Join(dir, "base-one.yml")
+	baseTwo := filepath.Join(dir, "base-two.yml")
+	baseThree := filepath.Join(dir, "base-third.yml")
+	mainData := filepath.Join(dir, "main.yml")
+	overrideOne := filepath.Join(dir, "override-one.yml")
+	overrideTwo := filepath.Join(dir, "override-two.yml")
+	overrideThree := filepath.Join(dir, "override-three.yml")
+	template := filepath.Join(dir, "template.mustache")
+	for path, contents := range map[string]string{
+		baseOne:       "baseOnly: base\norder: base-one\nnested:\n  fromBase: yes\n  order: base-one\narray: [base-one]\n",
+		baseTwo:       "order: base-two\nnested:\n  order: base-two\n  fromBaseTwo: yes\narray: [base-two]\n",
+		baseThree:     "",
+		mainData:      "---\nname: first\norder: main\nnested:\n  order: main\n  fromMain: one\narray: [main-one, main-two]\n---\nname: second\nnested:\n  fromMain: two\narray: [main-three]\n",
+		overrideOne:   "order: override-one\nnested:\n  order: override-one\n  fromOverride: yes\narray: [override-one]\n",
+		overrideTwo:   "order: override-two\nnested:\n  order: override-two\noverrideOnly: override\narray: [override-two, override-three]\n",
+		overrideThree: "",
+		template:      "{{name}}|{{baseOnly}}|{{order}}|{{nested.fromBase}}|{{nested.fromBaseTwo}}|{{nested.fromMain}}|{{nested.fromOverride}}|{{overrideOnly}}|{{#array}}{{.}},{{/array}}\n",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{
+		"--base-data", baseOne + "," + baseTwo + "," + baseThree,
+		"--override-data", overrideOne + "," + overrideTwo + "," + overrideThree,
+		mainData,
+		template,
+	}, strings.NewReader(""), &stdout, &stderr)
+	want := "first|base|override-two|yes|yes|one|yes|override|override-two,override-three,\n" +
+		"second|base|override-two|yes|yes|two|yes|override|override-two,override-three,\n"
+	if exit != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunRejectsMultipleDocumentsInAdditionalData(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "base.yml")
+	mainData := filepath.Join(dir, "main.yml")
+	template := filepath.Join(dir, "template.mustache")
+	for path, contents := range map[string]string{
+		base:     "---\none: 1\n---\ntwo: 2\n",
+		mainData: "{}\n",
+		template: "unused",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--base-data", base, mainData, template}, strings.NewReader(""), &stdout, &stderr)
+	wantError := fmt.Sprintf("mustache: YAML %s contains more than one document\n", base)
+	if exit != 1 || stdout.Len() != 0 || stderr.String() != wantError {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunEmptyInput(t *testing.T) {
 	dir := t.TempDir()
 	template := filepath.Join(dir, "template.mustache")
