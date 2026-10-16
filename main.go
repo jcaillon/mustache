@@ -41,6 +41,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		return 2
 	}
+	if verbose {
+		fmt.Fprintf(stderr, "mustache: verbose: arguments=%q\n", args)
+	}
 	if *showVersion {
 		fmt.Fprintln(stdout, "mustache", version)
 		return 0
@@ -83,12 +86,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	baseDocuments, err := render.LoadDataFiles(*baseData)
 	if err != nil {
-		fmt.Fprintf(stderr, "mustache: %v\n", err)
+		fmt.Fprintf(stderr, "mustache: load base data: %v\n", err)
 		return 1
 	}
 	overrideDocuments, err := render.LoadDataFiles(*overrideData)
 	if err != nil {
-		fmt.Fprintf(stderr, "mustache: %v\n", err)
+		fmt.Fprintf(stderr, "mustache: load override data: %v\n", err)
 		return 1
 	}
 

@@ -3,10 +3,21 @@ set -euo pipefail
 
 function runMustacheTest() {
   local testFolder="${1}"
-  shift 1
-  local -a args=(run main.go "${@}" "${testFolder}/data.yaml" "${testFolder}/template.mustache")
+
+  if [[ -f ${testFolder}/options ]]; then
+    IFS='' read -rd '' REPLY <"${testFolder}/options" || :
+  else
+    REPLY=''
+  fi
+  REPLY="${REPLY//'${PWD}'/"${PWD}"}"
+  REPLY="${REPLY%%[[:space:]]}"
+  local -a args
+  eval "options=(${REPLY})"
+
+  local -a args=(run main.go "${options[@]}" "${testFolder}/data.yaml" "${testFolder}/template.mustache")
   printf '%q ' "go" "${args[@]}"
   printf '\n'
+
   go "${args[@]}" >"${testFolder}/output" 2>"${testFolder}/error.log" || true
 
   if [[ -s "${testFolder}/error.log" ]]; then
@@ -27,16 +38,8 @@ function runTests() {
     if [[ ! -d ${testFolder} ]]; then
       continue
     fi
-    if [[ -f ${testFolder}/options ]]; then
-      IFS='' read -rd '' REPLY <"${testFolder}/options" || :
-    else
-      REPLY=''
-    fi
-    REPLY="${REPLY%%[[:space:]]}"
-    local -a args
-    eval "args=(${REPLY})"
     # shellcheck disable=SC2086
-    runMustacheTest "${testFolder#'./'}" "${args[@]}"
+    runMustacheTest "${testFolder#'./'}"
   done
 }
 

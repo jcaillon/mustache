@@ -79,7 +79,7 @@ func TestRunRejectsMultipleDocumentsInAdditionalData(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	exit := run([]string{"--base-data", base, mainData, template}, strings.NewReader(""), &stdout, &stderr)
-	wantError := fmt.Sprintf("mustache: YAML %s contains more than one document\n", base)
+	wantError := fmt.Sprintf("mustache: load base data: YAML %s contains more than one document\n", base)
 	if exit != 1 || stdout.Len() != 0 || stderr.String() != wantError {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
@@ -349,11 +349,13 @@ func TestRunVerbose(t *testing.T) {
 	for _, option := range []string{"-v", "--verbose"} {
 		t.Run(option, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			exit := run([]string{option, data, template}, strings.NewReader(""), &stdout, &stderr)
+			args := []string{option, data, template}
+			exit := run(args, strings.NewReader(""), &stdout, &stderr)
 			if exit != 0 || stdout.String() != "Hello Ada\nresult\n" {
 				t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 			}
 			for _, want := range []string{
+				fmt.Sprintf("mustache: verbose: arguments=%q\n", args),
 				"mustache: verbose: reading YAML from " + data,
 				"mustache: verbose: decoded YAML document 1; opening template " + template,
 				"mustache: verbose: rendering template " + absTemplate,
@@ -366,6 +368,21 @@ func TestRunVerbose(t *testing.T) {
 				if !strings.Contains(stderr.String(), want) {
 					t.Errorf("stderr does not contain %q:\n%s", want, stderr.String())
 				}
+			}
+		})
+	}
+}
+
+func TestRunVerboseLogsArgumentsBeforeDataErrors(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing data.yml")
+	for _, option := range []string{"-v", "--verbose"} {
+		t.Run(option, func(t *testing.T) {
+			args := []string{option, "--base-data", missing + ",/c/base.yml", "-", "template.mustache"}
+			var stdout, stderr bytes.Buffer
+			exit := run(args, strings.NewReader(""), &stdout, &stderr)
+			wantLog := fmt.Sprintf("mustache: verbose: arguments=%q\n", args)
+			if exit != 1 || stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), wantLog) || !strings.Contains(stderr.String(), "mustache: load base data:") {
+				t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 			}
 		})
 	}

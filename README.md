@@ -38,7 +38,7 @@ mustache [OPTIONS] [--] <YAML> <FILE>
 
 Pass a YAML data source followed by a Mustache template file. The rendered result is printed to standard output. Use `-` as the YAML argument to read the data from standard input.
 
-Use `--base-data` and `--override-data` to merge additional single-document YAML files into each document from the main data source. Each option accepts comma-separated file paths. Files are merged in this order: base files from left to right, the current main document, then override files from left to right. Mappings are merged recursively; all other values, including lists, replace the earlier value.
+Use `--base-data` and `--override-data` to merge additional single-document YAML files into each document from the main data source. Each option accepts comma-separated file paths. Files are merged in this order: base files from left to right, the current main document, then override files from left to right. Mappings are merged recursively; all other values, including lists, replace the earlier value. Mustache will still render multiple times depending on the number of documents in the main data source.
 
 ## How it works
 
