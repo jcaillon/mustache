@@ -1,0 +1,58 @@
+overview: |
+  Partial loading, relative paths, and errors in partial templates.
+tests:
+  - &partial
+    name: Include a partial
+    args: [--strict, data.yml, template.mustache]
+    files:
+      - &empty-data
+        path: data.yml
+        content: "{}\n"
+      - path: template.mustache
+        content: "before\n{{>partial.mustache}}\n"
+      - path: partial.mustache
+        content: included
+    stdout: "before\nincluded"
+
+  - <<: *partial
+    name: Strict missing partial reports the expected file path
+    files:
+      - *empty-data
+      - path: template.mustache
+        content: "before\n{{>missing.mustache}}\n"
+    exit_code: 1
+    stdout: "before\n"
+    stderr: "mustache: render template ${DIR}/template.mustache:2: partial file not found: ${DIR}/missing.mustache\n"
+
+  - name: Keep missing partial tags unchanged
+    args: [--keep-missing-tags, data.yml, template.mustache]
+    files:
+      - *empty-data
+      - path: template.mustache
+        content: before {{> missing.mustache }} after
+    stdout: before {{> missing.mustache }} after
+
+  - name: Nested partials are relative to the current template
+    args: [--strict, data.yml, template.mustache]
+    files:
+      - path: data.yml
+        content: "name: Ada\n"
+      - path: template.mustache
+        content: "{{>partials/outer.mustache}}"
+      - path: partials/outer.mustache
+        content: "{{>inner.mustache}}"
+      - path: partials/inner.mustache
+        content: Hello {{name}}!
+    stdout: Hello Ada!
+
+  - name: Errors report the partial file and line
+    args: [--strict, data.yml, template.mustache]
+    files:
+      - *empty-data
+      - path: template.mustache
+        content: "{{>partial.mustache}}"
+      - path: partial.mustache
+        content: "first\n{{missing}}"
+    exit_code: 1
+    stdout: "first\n"
+    stderr: "mustache: render template ${DIR}/partial.mustache:2: missing tag \"missing\"\n"

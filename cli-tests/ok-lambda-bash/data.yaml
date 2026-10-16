@@ -1,8 +1,0 @@
-lambda1: !code
-  bash: echo -n "world"
-
-another:
-  lambda2: !code
-    bash: if [[ ${1} == 'true' ]]; then echo -n 'great {{thing}}'; exit 0; else echo NOK; exit 1; fi
-
-thing: stuff

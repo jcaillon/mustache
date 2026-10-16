@@ -1,0 +1,237 @@
+overview: |
+  YAML input, multiple documents, and base/main/override merge order.
+tests:
+  - name: Multiple documents from stdin
+    args: ["-",template.mustache]
+    stdin: |
+      ---
+      name: Ada
+      ---
+      name: Go
+      ---
+    files:
+      - path: template.mustache
+        content: "Hi {{name}}!\n"
+    stdout: "Hi Ada!\nHi Go!\n"
+
+  - name: Multiple documents from a file
+    args: [data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: |
+          name: Julien
+          ---
+          name: Catherine
+          ---
+          name: Maxime
+      - path: template.mustache
+        content: "Hello {{name}}!\n"
+    stdout: "Hello Julien!\nHello Catherine!\nHello Maxime!\n"
+
+  - &empty-input
+    name: Empty input
+    args: ["-",template.mustache]
+    files:
+      - path: template.mustache
+        content: "rendered\n"
+    stdout: "rendered\n"
+
+  - <<: *empty-input
+    name: Whitespace input
+    stdin: " \n  "
+
+  - name: Merge repeated base and override files into each main document
+    desc: Later mappings merge recursively and arrays replace earlier arrays; empty additional files are accepted.
+    args:
+      - --base-data
+      - base-one, shared.yml
+      - --base-data
+      - base-two.yml
+      - --base-data
+      - base-third.yml
+      - --override-data
+      - override-one, shared.yml
+      - --override-data
+      - override-two.yml
+      - --override-data
+      - override-three.yml
+      - main.yml
+      - template.mustache
+    files:
+      - path: base-one, shared.yml
+        content: |
+          baseOnly: base
+          baseOrder: base-one
+          order: base-one
+          nested:
+            fromBase: yes
+            order: base-one
+          array: [base-one]
+      - path: base-two.yml
+        content: |
+          baseOrder: base-two
+          order: base-two
+          nested:
+            order: base-two
+            fromBaseTwo: yes
+          array: [base-two]
+      - path: base-third.yml
+        content: ""
+      - path: main.yml
+        content: |
+          ---
+          name: first
+          order: main
+          nested:
+            order: main
+            fromMain: one
+          array: [main-one, main-two]
+          ---
+          name: second
+          nested:
+            fromMain: two
+          array: [main-three]
+      - path: override-one, shared.yml
+        content: |
+          order: override-one
+          nested:
+            order: override-one
+            fromOverride: yes
+          array: [override-one]
+      - path: override-two.yml
+        content: |
+          order: override-two
+          nested:
+            order: override-two
+          overrideOnly: override
+          array: [override-two, override-three]
+      - path: override-three.yml
+        content: ""
+      - path: template.mustache
+        content: "{{name}}|{{baseOnly}}|{{baseOrder}}|{{order}}|{{nested.fromBase}}|{{nested.fromBaseTwo}}|{{nested.fromMain}}|{{nested.fromOverride}}|{{overrideOnly}}|{{#array}}{{.}},{{/array}}\n"
+    stdout: |
+      first|base|base-two|override-two|yes|yes|one|yes|override|override-two,override-three,
+      second|base|base-two|override-two|yes|yes|two|yes|override|override-two,override-three,
+
+  - name: Merge relative and absolute file paths
+    args:
+      - --base-data
+      - base1.yaml
+      - --base-data
+      - ${DIR}/base2.yaml
+      - --base-data
+      - base3.yaml
+      - --override-data
+      - override1.yaml
+      - --override-data
+      - ${DIR}/override2.yaml
+      - data.yaml
+      - template.mustache
+    files:
+      - path: base1.yaml
+        content: |
+
+          key:
+            thing:
+              first: base1
+              second: base1
+              arrayMain:
+                - base1
+                - base2
+          expectMain: base
+          expectBase1: base1
+      - path: base2.yaml
+        content: "expectBase2: base2\n"
+      - path: base3.yaml
+        content: ""
+      - path: data.yaml
+        content: |+
+          ---
+          key:
+            thing:
+              first: main
+              arrayOverride1:
+                - main1
+                - main2
+              arrayMain:
+                - main1
+                - main2
+          expectMain: main
+          expectOverride1: override1
+          expectOverride2: override2
+          ---
+
+      - path: override1.yaml
+        content: |
+
+          key:
+            thing:
+              third: override1
+              arrayOverride1:
+                - override1-1
+                - override1-2
+          expectOverride1: override1
+          expectOverride2: override1
+      - path: override2.yaml
+        content: "expectOverride2: override2\n"
+      - path: template.mustache
+        content: |
+          key.thing.first: {{key.thing.first}}
+          key.thing.second: {{key.thing.second}}
+          key.thing.third: {{key.thing.third}}
+          key.thing.arrayOverride1:
+          {{#key.thing.arrayOverride1}}
+          - {{.}}
+          {{/key.thing.arrayOverride1}}
+          key.thing.arrayMain:
+          {{#key.thing.arrayMain}}
+          - {{.}}
+          {{/key.thing.arrayMain}}
+          expectMain: {{expectMain}}
+          expectBase1: {{expectBase1}}
+          expectBase2: {{expectBase2}}
+          expectOverride1: {{expectOverride1}}
+          expectOverride2: {{expectOverride2}}
+    stdout: |
+      key.thing.first: main
+      key.thing.second: base1
+      key.thing.third: override1
+      key.thing.arrayOverride1:
+      - override1-1
+      - override1-2
+      key.thing.arrayMain:
+      - main1
+      - main2
+      expectMain: main
+      expectBase1: base1
+      expectBase2: base2
+      expectOverride1: override1
+      expectOverride2: override2
+
+  - name: Reject multiple documents in additional data
+    args: [--base-data, base.yml, main.yml, template.mustache]
+    files:
+      - path: base.yml
+        content: "---\none: 1\n---\ntwo: 2\n"
+      - path: main.yml
+        content: "{}\n"
+      - path: template.mustache
+        content: unused
+    exit_code: 1
+    stderr: "mustache: load base data: YAML base.yml contains more than one document\n"
+
+  - name: Invalid YAML reports its source line
+    args: [data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: |
+          this:
+            is: ok
+            # ok
+
+           thatisNotOk!
+          yes: right
+      - path: template.mustache
+        content: ok
+    exit_code: 1
+    stderr: "mustache: decode YAML data.yaml:5: did not find expected key\n"

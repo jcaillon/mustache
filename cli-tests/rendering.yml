@@ -1,0 +1,286 @@
+overview: |
+  End-to-end rendering with CLI options, YAML lambdas, partials, and extensions.
+tests:
+  - name: Conditional rendering across documents
+    args: [data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: |
+          lambda: !code
+            bash: 'printf "%s" "{{environment}}"'
+          environment: production
+          reaction: cool
+          ---
+          lambda: !code
+            bash: 'printf "%s" "{{environment}}"'
+          environment: sandbox
+          reaction: nice
+          ---
+          lambda: !code
+            bash: 'printf "%s" "{{environment}}"'
+          environment: qa
+          reaction: derp
+      - path: template.mustache
+        content: |
+          {{?if environment==production}}
+          this is production {{?if lambda==production}}right{{?else}}wrong{{?fi}}
+          {{?elif environment!=sandbox}}
+          this is not sandbox
+          {{?else}}
+          this is something else
+          {{?fi}}
+          {{?if reaction=~^c.*$}}
+          cool
+          {{?elif reaction!~ce$}}
+          not cool
+          {{?else}}
+          nice
+          {{?fi}}
+    stdout: |
+      this is production right
+      cool
+      this is something else
+      nice
+      this is not sandbox
+      not cool
+
+  - name: Disable HTML escaping for regular and unescaped tags
+    args: [--disable-html-escape, data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: "htmlTag: \"<div>hm</div>\"\n"
+      - path: template.mustache
+        content: |
+          This html is not escaped: {{htmlTag}}
+          This one is not as well: {{& htmlTag}}
+    stdout: |
+      This html is not escaped: <div>hm</div>
+      This one is not as well: <div>hm</div>
+
+  - name: Dynamic partials use configured delimiters
+    args: [--set-delimiters, '<% %>', --, data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: |
+          person:
+            name: Julien
+
+          partialName: partial1.mustache
+
+          count:
+            - name: 1
+            - name: 2
+            - name: 3
+      - path: template.mustache
+        content: |
+          Hello <%person.name%>!
+
+          <%>*partialName%>
+      - path: partial1.mustache
+        content: |
+          Count with me:
+
+          <%#count%>
+          * <%name%>
+          <%/count%>
+    stdout: |
+      Hello Julien!
+
+      Count with me:
+
+      * 1
+      * 2
+      * 3
+
+  - name: Indented strings
+    args: [data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: |
+          yaml: |-
+            age: 39
+            fruits:
+              - pomme
+              - banane
+              - orange
+          text: |-
+            This is text block.
+            Another line.
+            And it continues.
+            The end.
+          another: |-
+            |-
+              oh cool
+          simple: coucou
+      - path: template.mustache
+        content: |
+          my:
+            awesome:
+              yaml:
+                {{|yaml}}
+          and:
+            this:
+              is:
+                a: |-
+                  {{|text}}
+          str: {{|another}}
+          simple: {{|simple}}
+    stdout: |
+      my:
+        awesome:
+          yaml:
+            age: 39
+            fruits:
+              - pomme
+              - banane
+              - orange
+      and:
+        this:
+          is:
+            a: |-
+              This is text block.
+              Another line.
+              And it continues.
+              The end.
+      str: |-
+             oh cool
+      simple: coucou
+
+  - name: Bash interpolation and section lambdas
+    args: [data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: |
+          lambda1: !code
+            bash: echo -n "world"
+
+          another:
+            lambda2: !code
+              bash: if [[ ${1} == 'true' ]]; then echo -n 'great {{thing}}'; exit 0; else echo NOK; exit 1; fi
+
+          thing: stuff
+      - path: template.mustache
+        content: |
+          Hello {{lambda1}}
+          --
+          {{#another.lambda2}}true{{/another.lambda2}}
+          {{^another.lambda2}}false{{/another.lambda2}}
+          --
+    stdout: |
+      Hello world
+      --
+      great stuff
+
+      --
+
+  - name: Nested partials with an implicit file extension
+    args: [data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: ""
+      - path: template.mustache
+        content: "{{>partial1.mustache}}\n"
+      - path: partial1.mustache
+        content: "{{>partial2}}\n"
+      - path: partial2.mustache
+        content: "coucou\n"
+    stdout: "coucou\n"
+
+  - name: Parent templates and block overrides
+    args: [data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: |
+          headlines:
+            - A pug's handler grew mustaches.
+            - What an exciting day!
+      - path: article.mustache
+        content: |
+          <h1>{{$title}}The News of Today{{/title}}</h1>
+          {{$body}}
+          <p>Nothing special happened.</p>
+          {{/body}}
+      - path: template.mustache
+        content: |
+          {{<article}}
+            Never shown
+            {{$body}}
+              {{#headlines}}
+              <p>{{.}}</p>
+              {{/headlines}}
+            {{/body}}
+          {{/article}}
+
+          {{<article}}
+            {{$title}}Yesterday{{/title}}
+          {{/article}}
+    stdout: |
+      <h1>The News of Today</h1>
+      <p>A pug&#39;s handler grew mustaches.</p>
+      <p>What an exciting day!</p>
+
+      <h1>Yesterday</h1>
+      <p>Nothing special happened.</p>
+
+  - name: Custom delimiters across tag types
+    args: [--set-delimiters, '<% %>', --, data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: |
+          person:
+            name: Julien
+
+          isMarried: true
+          isSingle: false
+
+          section:
+            htmlTag: "<div>hm</div>"
+
+          isFalse: false
+
+          count:
+            - name: 1
+            - name: 2
+            - name: 3
+
+          count2:
+            - 1
+            - 2
+            - 3
+      - path: template.mustache
+        content: |
+          Hello <%person.name%>!
+
+          <%#isMarried%>
+          Married!
+          <%/isMarried%>
+          <%^isSingle%>
+          Single!
+          <%/isSingle%>
+
+          <%#section%>
+          This html is escaped: <%htmlTag%>
+          This one is not: <%& htmlTag%>
+          <%/section%>
+
+          Count with me:
+
+          <%#count%>
+          * <%name%>
+          <%/count%>
+
+          Again with the implicit dot on a regular array:
+
+          <%#count2%>
+          * <%.%>
+          <%/count2%>
+
+          <%#isFalse%>
+          This is never shown cause the section is false.
+          <%/isFalse%>
+
+          <%missingVar%>
+          <%#missingSection%>
+          derp
+          <%/missingSection%>
+    stdout: "Hello Julien!\n\nMarried!\nSingle!\n\nThis html is escaped: &lt;div&gt;hm&lt;/div&gt;\nThis one is not: <div>hm</div>\n\nCount with me:\n\n* 1\n* 2\n* 3\n\nAgain with the implicit dot on a regular array:\n\n* 1\n* 2\n* 3\n\n\n\n"

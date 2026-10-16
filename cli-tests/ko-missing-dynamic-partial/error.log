@@ -1,2 +1,0 @@
-mustache: render template C:\Users\jcaillon\data\repo\github.com\jcaillon\mustache\cli-tests\ko-missing-dynamic-partial\template.mustache:1: missing tag "missing.partial.mustache"
-exit status 1

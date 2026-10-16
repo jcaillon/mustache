@@ -1,2 +1,0 @@
-mustache: decode YAML cli-tests/ko-bad-yaml/data.yaml:5: did not find expected key
-exit status 1

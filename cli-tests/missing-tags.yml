@@ -1,0 +1,136 @@
+overview: |
+  Default, preserved, and strict missing tags, including source locations.
+tests:
+  - &missing-tags
+    name: Missing tags are null by default
+    args: [data.yml, template.mustache]
+    files:
+      - path: data.yml
+        content: "{}\n"
+      - path: template.mustache
+        content: value={{missing}} section={{#missing}}yes{{/missing}} inverted={{^missing}}yes{{/missing}}
+    stdout: value= section= inverted=yes
+
+  - <<: *missing-tags
+    name: Keep missing tags
+    args: [--keep-missing-tags, data.yml, template.mustache]
+    stdout: value={{missing}} section={{#missing}}yes{{/missing}} inverted={{^missing}}yes{{/missing}}
+
+  - <<: *missing-tags
+    name: Strict missing tags
+    args: [--strict, data.yml, template.mustache]
+    exit_code: 1
+    stdout: value=
+    stderr: "mustache: render template ${DIR}/template.mustache:1: missing tag \"missing\"\n"
+
+  - name: Strict missing section reports its line
+    args: [--strict, data.yml, template.mustache]
+    files:
+      - path: data.yml
+        content: "{}\n"
+      - path: template.mustache
+        content: "first line\nsecond line\n{{#missingSection}}yes{{/missingSection}}\n"
+    exit_code: 1
+    stdout: "first line\nsecond line\n"
+    stderr: "mustache: render template ${DIR}/template.mustache:3: missing tag \"missingSection\"\n"
+
+  - &strict
+    name: Strict missing variable
+    args: [--strict, data.yaml, template.mustache]
+    files:
+      - &empty-data
+        path: data.yaml
+        content: ""
+      - path: template.mustache
+        content: "{{missing.variable.here}}\n"
+    exit_code: 1
+    stderr: "mustache: render template ${DIR}/template.mustache:1: missing tag \"missing.variable.here\"\n"
+
+  - <<: *strict
+    name: Strict missing indented variable
+    files:
+      - *empty-data
+      - path: template.mustache
+        content: "{{|missing.variable.here}}\n"
+
+  - <<: *strict
+    name: Strict missing conditional operand
+    files:
+      - *empty-data
+      - path: template.mustache
+        content: |
+          {{?if missing.variable.here==coucou}}
+          coucou
+          {{?fi}}
+
+  - <<: *strict
+    name: Strict missing dynamic partial name
+    files:
+      - *empty-data
+      - path: template.mustache
+        content: "{{>*missing.partial.mustache}}\n"
+    stderr: "mustache: render template ${DIR}/template.mustache:1: missing tag \"missing.partial.mustache\"\n"
+
+  - <<: *strict
+    name: Strict missing partial file
+    files:
+      - *empty-data
+      - path: template.mustache
+        content: "{{>missing.partial.mustache}}\n"
+    stderr: "mustache: render template ${DIR}/template.mustache:1: partial file not found: ${DIR}/missing.partial.mustache\n"
+
+  - <<: *strict
+    name: Strict missing inverted section
+    files:
+      - *empty-data
+      - path: template.mustache
+        content: |
+          # line
+          {{^missingSection}}{{/missingSection}}
+          {{#missingSection}}{{/missingSection}}
+    stdout: "# line\n"
+    stderr: "mustache: render template ${DIR}/template.mustache:2: missing tag \"missingSection\"\n"
+
+  - <<: *strict
+    name: Strict missing variable in a partial
+    files:
+      - *empty-data
+      - path: template.mustache
+        content: "{{>partial.mustache}}\n"
+      - path: partial.mustache
+        content: "{{missing.variable.here}}\n"
+    stderr: "mustache: render template ${DIR}/partial.mustache:1: missing tag \"missing.variable.here\"\n"
+
+  - <<: *strict
+    name: Strict missing variable in a lambda result
+    files:
+      - path: data.yaml
+        content: |
+          lambda: !code
+            bash: echo -n "{{missing.var}}"
+      - path: template.mustache
+        content: "{{lambda}}\n"
+    stderr: "mustache: render template (lambda code for tag lambda):1: missing tag \"missing.var\"\n"
+
+  - name: Keep all missing tag types
+    args: [--keep-missing-tags, data.yaml, template.mustache]
+    files:
+      - path: data.yaml
+        content: "replace: this\n"
+      - path: template.mustache
+        content: |
+          # line
+          {{replace}}
+          {{^missingSection}}{{/missingSection}}
+          {{#missingSection}}{{/missingSection}}
+          {{missing.variable.here}}
+          {{>missingPartial}}
+          {{>*thing.missingPartial}}
+    stdout: |
+      # line
+      this
+      {{^missingSection}}{{/missingSection}}
+      {{#missingSection}}{{/missingSection}}
+      {{missing.variable.here}}
+      {{>missingPartial}}
+      {{>*thing.missingPartial}}

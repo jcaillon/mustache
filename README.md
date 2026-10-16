@@ -253,6 +253,9 @@ go test ./...
 go build ./...
 ```
 
+CLI behavior is defined in the YAML suites under [`cli-tests/`](cli-tests/TESTING.md)
+and run by `main_test.go`. Renderer specifications live under [`specs/`](specs/TESTING.md).
+
 To validate the release configuration without publishing anything:
 
 ```sh

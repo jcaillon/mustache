@@ -1,0 +1,59 @@
+overview: |
+  Verbose rendering, argument logging before failures, and Bash section arguments.
+tests:
+  - &verbose
+    name: Long verbose option
+    args: [--verbose, data.yml, template.mustache]
+    files:
+      - path: data.yml
+        content: "name: Ada\nscript: !code {bash: 'printf result; printf warning >&2'}\n"
+      - path: template.mustache
+        content: "Hello {{name}}\n{{script}}\n"
+    stdout: "Hello Ada\nresult\n"
+    stderr_contains:
+      - 'mustache: verbose: arguments=["--verbose" "data.yml" "template.mustache"]'
+      - 'mustache: verbose: reading YAML from data.yml'
+      - 'mustache: verbose: decoded YAML document 1; opening template template.mustache'
+      - 'mustache: verbose: rendering template ${DIR}/template.mustache'
+      - 'mustache: verbose: lookup "name" in ${DIR}/template.mustache:1: found'
+      - 'mustache: verbose: lookup "script" in ${DIR}/template.mustache:2: found'
+      - 'mustache: verbose: executing bash command args=["bash" "-c" "printf result; printf warning >&2"]'
+      - 'mustache: verbose: bash command stdout="result" stderr="warning" exit_code=0'
+      - 'mustache: verbose: finished template ${DIR}/template.mustache'
+
+  - <<: *verbose
+    name: Short verbose option
+    args: [-v, data.yml, template.mustache]
+    stderr_pattern: '^mustache: verbose: arguments=\["-v" "data.yml" "template.mustache"\]\n'
+    stderr_contains:
+      - 'mustache: verbose: reading YAML from data.yml'
+      - 'mustache: verbose: decoded YAML document 1; opening template template.mustache'
+      - 'mustache: verbose: rendering template ${DIR}/template.mustache'
+      - 'mustache: verbose: lookup "name" in ${DIR}/template.mustache:1: found'
+      - 'mustache: verbose: lookup "script" in ${DIR}/template.mustache:2: found'
+      - 'mustache: verbose: executing bash command args=["bash" "-c" "printf result; printf warning >&2"]'
+      - 'mustache: verbose: bash command stdout="result" stderr="warning" exit_code=0'
+      - 'mustache: verbose: finished template ${DIR}/template.mustache'
+
+  - &data-error
+    name: Long verbose option logs arguments before data errors
+    args: [--verbose, --base-data, missing data.yml, --base-data, /c/base.yml, "-", template.mustache]
+    exit_code: 1
+    stderr_pattern: '^mustache: verbose: arguments=\["--verbose" "--base-data" "missing data.yml" "--base-data" "/c/base.yml" "-" "template.mustache"\]\n'
+    stderr_contains: ['mustache: load base data:']
+
+  - <<: *data-error
+    name: Short verbose option logs arguments before data errors
+    args: [-v, --base-data, missing data.yml, --base-data, /c/base.yml, "-", template.mustache]
+    stderr_pattern: '^mustache: verbose: arguments=\["-v" "--base-data" "missing data.yml" "--base-data" "/c/base.yml" "-" "template.mustache"\]\n'
+
+  - name: Bash section arguments
+    desc: Windows prepends an environment-based argument shim for MSYS2.
+    args: [--verbose, data.yml, template.mustache]
+    files:
+      - path: data.yml
+        content: "script: !code {bash: 'printf %s \"$1\"'}\n"
+      - path: template.mustache
+        content: "{{#script}}hello world{{/script}}"
+    stdout: hello world
+    stderr_pattern: 'mustache: verbose: executing bash command args=\["bash" "-c" "(set -- \\"\$MUSTACHE_LAMBDA_ARG\\"; )?printf %s \\"\$1\\"" "-s" "hello world"\]'

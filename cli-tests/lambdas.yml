@@ -1,0 +1,357 @@
+overview: |
+  --disable-lambda rejects invocation without executing Bash, regardless of the
+  data source or tag type. Unused lambdas and skipped branches remain safe.
+  YAML anchors share fixtures without adding special matrix logic to the runner.
+tests:
+  - &interpolation
+    name: stdin/interpolation
+    args: [--disable-lambda, "-", template.mustache]
+    stdin: &input |
+      value: safe
+      enabled: true
+      lambda: &lambda !code {bash: 'printf executed > "$MUSTACHE_TEST_LAMBDA_MARKER"; printf result'}
+      alias: *lambda
+    env:
+      MUSTACHE_TEST_LAMBDA_MARKER: lambda-executed
+    files:
+      - &data
+        path: data.yml
+        content: *input
+      - &partial
+        path: partial.mustache
+        content: "{{lambda}}"
+      - path: template.mustache
+        content: "{{lambda}}"
+    exit_code: 1
+    stderr_contains: ['lambda usage is disabled (--disable-lambda)']
+    absent_files: [lambda-executed]
+
+  - &unescaped
+    <<: *interpolation
+    name: stdin/unescaped
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{{lambda}}}"
+
+  - &ampersand
+    <<: *interpolation
+    name: stdin/ampersand
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{&lambda}}"
+
+  - &indented
+    <<: *interpolation
+    name: stdin/indented
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{|lambda}}"
+
+  - &section
+    <<: *interpolation
+    name: stdin/section
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{#lambda}}text{{/lambda}}"
+
+  - &inverted
+    <<: *interpolation
+    name: stdin/inverted
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{^lambda}}text{{/lambda}}"
+
+  - &conditional
+    <<: *interpolation
+    name: stdin/conditional
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{?if lambda==result}}text{{?fi}}"
+
+  - &elif
+    <<: *interpolation
+    name: stdin/elif
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{?if value==other}}text{{?elif lambda==result}}text{{?fi}}"
+
+  - &nested
+    <<: *interpolation
+    name: stdin/nested
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{#enabled}}{{lambda}}{{/enabled}}"
+
+  - &partial-invocation
+    <<: *interpolation
+    name: stdin/partial
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{>partial.mustache}}"
+
+  - &alias
+    <<: *interpolation
+    name: stdin/alias
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{alias}}"
+
+  - &unused
+    <<: *interpolation
+    name: stdin/unused
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{value}}"
+    exit_code: 0
+    stdout: safe
+    stderr_contains: []
+
+  - &skipped-section
+    <<: *unused
+    name: stdin/skipped section
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{#missing}}{{lambda}}{{/missing}}{{value}}"
+
+  - &skipped-branch
+    <<: *unused
+    name: stdin/skipped branch
+    files:
+      - *data
+      - *partial
+      - path: template.mustache
+        content: "{{?if value==safe}}{{value}}{{?elif lambda==result}}{{lambda}}{{?fi}}"
+
+  - <<: *interpolation
+    name: file/interpolation
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *unescaped
+    name: file/unescaped
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *ampersand
+    name: file/ampersand
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *indented
+    name: file/indented
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *section
+    name: file/section
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *inverted
+    name: file/inverted
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *conditional
+    name: file/conditional
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *elif
+    name: file/elif
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *nested
+    name: file/nested
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *partial-invocation
+    name: file/partial
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *alias
+    name: file/alias
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *unused
+    name: file/unused
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *skipped-section
+    name: file/skipped section
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *skipped-branch
+    name: file/skipped branch
+    args: [--disable-lambda, data.yml, template.mustache]
+    stdin: ""
+
+  - <<: *interpolation
+    name: base/interpolation
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *unescaped
+    name: base/unescaped
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *ampersand
+    name: base/ampersand
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *indented
+    name: base/indented
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *section
+    name: base/section
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *inverted
+    name: base/inverted
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *conditional
+    name: base/conditional
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *elif
+    name: base/elif
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *nested
+    name: base/nested
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *partial-invocation
+    name: base/partial
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *alias
+    name: base/alias
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *unused
+    name: base/unused
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *skipped-section
+    name: base/skipped section
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *skipped-branch
+    name: base/skipped branch
+    args: [--disable-lambda, --base-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *interpolation
+    name: override/interpolation
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *unescaped
+    name: override/unescaped
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *ampersand
+    name: override/ampersand
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *indented
+    name: override/indented
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *section
+    name: override/section
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *inverted
+    name: override/inverted
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *conditional
+    name: override/conditional
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *elif
+    name: override/elif
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *nested
+    name: override/nested
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *partial-invocation
+    name: override/partial
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *alias
+    name: override/alias
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *unused
+    name: override/unused
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *skipped-section
+    name: override/skipped section
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'
+
+  - <<: *skipped-branch
+    name: override/skipped branch
+    args: [--disable-lambda, --override-data, data.yml, "-", template.mustache]
+    stdin: '{}'

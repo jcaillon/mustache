@@ -1,0 +1,33 @@
+overview: |
+  CLI options, usage errors, and version output.
+tests:
+  - name: Disable HTML escaping
+    args: [--disable-html-escape, "-", template.mustache]
+    stdin: "value: '<b>text</b>'\n"
+    files:
+      - path: template.mustache
+        content: "{{value}}"
+    stdout: <b>text</b>
+
+  - name: Set custom delimiters
+    args: [--set-delimiters, '<% %>', data.yml, template.mustache]
+    files:
+      - path: data.yml
+        content: "name: Ada\n"
+      - path: template.mustache
+        content: <%name%>
+    stdout: Ada
+
+  - name: Missing arguments show usage
+    args: []
+    exit_code: 2
+    stderr_contains: ['Usage:']
+
+  - name: Conflicting missing-tag options
+    args: [--strict, --keep-missing-tags, data.yml, template.mustache]
+    exit_code: 2
+    stderr: "mustache: --keep-missing-tags and --strict cannot be used together\n"
+
+  - name: Version
+    args: [--version]
+    stdout: "mustache dev\n"
