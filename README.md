@@ -125,6 +125,12 @@ Hi mark!
 Hi scott!
 ```
 
+By default, rendered documents are concatenated without a separator. Use `--output-separator` to insert a literal string between them, with no leading or trailing separator. For example, in Bash, a single-document YAML template can produce multi-document YAML:
+
+```sh
+mustache --output-separator $'\n---\n' data.yml template.yml.mustache
+```
+
 ## Options
 
 | Option | Description |
@@ -133,6 +139,7 @@ Hi scott!
 | `--disable-html-escape` | Do not HTML-escape tag values. |
 | `--disable-lambda` | Fail if a lambda is invoked, preventing Bash command execution from YAML data. Use when the data is untrusted. |
 | `--keep-missing-tags` | Keep missing tags "as is" in the output instead of replacing them with empty strings. |
+| `--output-separator` | String written between rendered documents. Defaults to an empty string (no separator). |
 | `--override-data` | Single-document YAML file to merge after each main data document. Repeat for multiple files, merged in the given order. |
 | `--strict` | Fail on missing tags or partial files. Missing partial errors include the full expected file path. |
 | `--set-delimiters` | Set custom delimiters for the template. The opening and closing delimiters should be separated by a whitespace. For example, `--set-delimiters "{{ }}"` sets the delimiters to the default Mustache delimiters. |

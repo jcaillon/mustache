@@ -18,6 +18,46 @@ tests:
         content: <%name%>
     stdout: Ada
 
+  - &output-separator
+    name: Output separator between documents from stdin
+    args: [--output-separator, "\n---\n", "-", template.mustache]
+    stdin: "---\n---\nname: Ada\n---\n---\nname: Go\n---\nname: Julien\n---\n"
+    files:
+      - path: template.mustache
+        content: "name: {{name}}"
+    stdout: "name: Ada\n---\nname: Go\n---\nname: Julien"
+
+  - <<: *output-separator
+    name: Output separator between documents from a file
+    args: [--output-separator, "\n---\n", data.yml, template.mustache]
+    files:
+      - path: data.yml
+        content: "name: Ada\n---\nname: Go\n---\nname: Julien\n"
+      - path: template.mustache
+        content: "name: {{name}}"
+
+  - <<: *output-separator
+    name: Empty output separator preserves concatenation
+    args: [--output-separator, "", "-", template.mustache]
+    stdout: "name: Adaname: Goname: Julien"
+
+  - <<: *output-separator
+    name: Output separator is used literally
+    args: [--output-separator, '\n{{name}}&\n', "-", template.mustache]
+    stdout: 'name: Ada\n{{name}}&\nname: Go\n{{name}}&\nname: Julien'
+
+  - <<: *output-separator
+    name: Single document has no output separator
+    stdin: "name: Ada\n"
+    stdout: "name: Ada"
+
+  - <<: *output-separator
+    name: Empty rendered documents still have separators
+    files:
+      - path: template.mustache
+        content: ""
+    stdout: "\n---\n\n---\n"
+
   - name: Missing arguments show usage
     args: []
     exit_code: 2
