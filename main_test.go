@@ -25,23 +25,23 @@ func TestRunMultipleDocuments(t *testing.T) {
 
 func TestRunMergesBaseMainAndOverrideData(t *testing.T) {
 	dir := t.TempDir()
-	baseOne := filepath.Join(dir, "base-one.yml")
+	baseOne := filepath.Join(dir, "base-one, shared.yml")
 	baseTwo := filepath.Join(dir, "base-two.yml")
 	baseThree := filepath.Join(dir, "base-third.yml")
 	mainData := filepath.Join(dir, "main.yml")
-	overrideOne := filepath.Join(dir, "override-one.yml")
+	overrideOne := filepath.Join(dir, "override-one, shared.yml")
 	overrideTwo := filepath.Join(dir, "override-two.yml")
 	overrideThree := filepath.Join(dir, "override-three.yml")
 	template := filepath.Join(dir, "template.mustache")
 	for path, contents := range map[string]string{
-		baseOne:       "baseOnly: base\norder: base-one\nnested:\n  fromBase: yes\n  order: base-one\narray: [base-one]\n",
-		baseTwo:       "order: base-two\nnested:\n  order: base-two\n  fromBaseTwo: yes\narray: [base-two]\n",
+		baseOne:       "baseOnly: base\nbaseOrder: base-one\norder: base-one\nnested:\n  fromBase: yes\n  order: base-one\narray: [base-one]\n",
+		baseTwo:       "baseOrder: base-two\norder: base-two\nnested:\n  order: base-two\n  fromBaseTwo: yes\narray: [base-two]\n",
 		baseThree:     "",
 		mainData:      "---\nname: first\norder: main\nnested:\n  order: main\n  fromMain: one\narray: [main-one, main-two]\n---\nname: second\nnested:\n  fromMain: two\narray: [main-three]\n",
 		overrideOne:   "order: override-one\nnested:\n  order: override-one\n  fromOverride: yes\narray: [override-one]\n",
 		overrideTwo:   "order: override-two\nnested:\n  order: override-two\noverrideOnly: override\narray: [override-two, override-three]\n",
 		overrideThree: "",
-		template:      "{{name}}|{{baseOnly}}|{{order}}|{{nested.fromBase}}|{{nested.fromBaseTwo}}|{{nested.fromMain}}|{{nested.fromOverride}}|{{overrideOnly}}|{{#array}}{{.}},{{/array}}\n",
+		template:      "{{name}}|{{baseOnly}}|{{baseOrder}}|{{order}}|{{nested.fromBase}}|{{nested.fromBaseTwo}}|{{nested.fromMain}}|{{nested.fromOverride}}|{{overrideOnly}}|{{#array}}{{.}},{{/array}}\n",
 	} {
 		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 			t.Fatal(err)
@@ -50,13 +50,17 @@ func TestRunMergesBaseMainAndOverrideData(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	exit := run([]string{
-		"--base-data", baseOne + "," + baseTwo + "," + baseThree,
-		"--override-data", overrideOne + "," + overrideTwo + "," + overrideThree,
+		"--base-data", baseOne,
+		"--base-data", baseTwo,
+		"--base-data", baseThree,
+		"--override-data", overrideOne,
+		"--override-data", overrideTwo,
+		"--override-data", overrideThree,
 		mainData,
 		template,
 	}, strings.NewReader(""), &stdout, &stderr)
-	want := "first|base|override-two|yes|yes|one|yes|override|override-two,override-three,\n" +
-		"second|base|override-two|yes|yes|two|yes|override|override-two,override-three,\n"
+	want := "first|base|base-two|override-two|yes|yes|one|yes|override|override-two,override-three,\n" +
+		"second|base|base-two|override-two|yes|yes|two|yes|override|override-two,override-three,\n"
 	if exit != 0 || stdout.String() != want || stderr.Len() != 0 {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
@@ -377,7 +381,7 @@ func TestRunVerboseLogsArgumentsBeforeDataErrors(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing data.yml")
 	for _, option := range []string{"-v", "--verbose"} {
 		t.Run(option, func(t *testing.T) {
-			args := []string{option, "--base-data", missing + ",/c/base.yml", "-", "template.mustache"}
+			args := []string{option, "--base-data", missing, "--base-data", "/c/base.yml", "-", "template.mustache"}
 			var stdout, stderr bytes.Buffer
 			exit := run(args, strings.NewReader(""), &stdout, &stderr)
 			wantLog := fmt.Sprintf("mustache: verbose: arguments=%q\n", args)

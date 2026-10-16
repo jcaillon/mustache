@@ -21,10 +21,17 @@ func main() {
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("mustache", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	baseData := flags.String("base-data", "", "comma-separated YAML files merged before the main data")
+	var baseData, overrideData []string
+	flags.Func("base-data", "YAML file merged before the main data (repeat for multiple files)", func(name string) error {
+		baseData = append(baseData, name)
+		return nil
+	})
 	disableHTMLEscape := flags.Bool("disable-html-escape", false, "do not HTML-escape tag values")
 	keepMissing := flags.Bool("keep-missing-tags", false, "keep missing tags in the output")
-	overrideData := flags.String("override-data", "", "comma-separated YAML files merged after the main data")
+	flags.Func("override-data", "YAML file merged after the main data (repeat for multiple files)", func(name string) error {
+		overrideData = append(overrideData, name)
+		return nil
+	})
 	strict := flags.Bool("strict", false, "fail when a tag or partial file is missing")
 	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing delimiters separated by whitespace")
 	showVersion := flags.Bool("version", false, "print the version and exit")
@@ -84,12 +91,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "mustache: %v\n", err)
 		return 2
 	}
-	baseDocuments, err := render.LoadDataFiles(*baseData)
+	baseDocuments, err := render.LoadDataFiles(baseData)
 	if err != nil {
 		fmt.Fprintf(stderr, "mustache: load base data: %v\n", err)
 		return 1
 	}
-	overrideDocuments, err := render.LoadDataFiles(*overrideData)
+	overrideDocuments, err := render.LoadDataFiles(overrideData)
 	if err != nil {
 		fmt.Fprintf(stderr, "mustache: load override data: %v\n", err)
 		return 1

@@ -38,7 +38,7 @@ mustache [OPTIONS] [--] <YAML> <FILE>
 
 Pass a YAML data source followed by a Mustache template file. The rendered result is printed to standard output. Use `-` as the YAML argument to read the data from standard input.
 
-Use `--base-data` and `--override-data` to merge additional single-document YAML files into each document from the main data source. Each option accepts comma-separated file paths. Files are merged in this order: base files from left to right, the current main document, then override files from left to right. Mappings are merged recursively; all other values, including lists, replace the earlier value. Mustache will still render multiple times depending on the number of documents in the main data source.
+Use `--base-data` and `--override-data` to merge additional single-document YAML files into each document from the main data source. Each option accepts one file path; repeat the option for each additional file. Files are merged in this order: base files in option order, the current main document, then override files in option order. Mappings are merged recursively; all other values, including lists, replace the earlier value. Mustache will still render multiple times depending on the number of documents in the main data source.
 
 ## How it works
 
@@ -125,10 +125,10 @@ Hi scott!
 
 | Option | Description |
 | --- | --- |
-| `--base-data` | Comma-separated single-document YAML files to merge before each main data document, in the given order. |
+| `--base-data` | Single-document YAML file to merge before each main data document. Repeat for multiple files, merged in the given order. |
 | `--disable-html-escape` | Do not HTML-escape tag values. |
 | `--keep-missing-tags` | Keep missing tags "as is" in the output instead of replacing them with empty strings. |
-| `--override-data` | Comma-separated single-document YAML files to merge after each main data document, in the given order. |
+| `--override-data` | Single-document YAML file to merge after each main data document. Repeat for multiple files, merged in the given order. |
 | `--strict` | Fail on missing tags or partial files. Missing partial errors include the full expected file path. |
 | `--set-delimiters` | Set custom delimiters for the template. The opening and closing delimiters should be separated by a whitespace. For example, `--set-delimiters "{{ }}"` sets the delimiters to the default Mustache delimiters. |
 | `-v`, `--verbose` | Log rendering steps, contextual lookups, partials, and Bash lambda execution details to standard error. |
@@ -174,7 +174,7 @@ mustache --set-delimiters "<% %>" data.yml template.mustache
 Merge defaults and environment-specific overrides into every main data document:
 
 ```sh
-mustache --base-data defaults.yml,shared.yml --override-data production.yml data.yml template.mustache
+mustache --base-data defaults.yml --base-data shared.yml --override-data production.yml data.yml template.mustache
 ```
 
 ## Development

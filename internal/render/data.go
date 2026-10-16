@@ -87,14 +87,9 @@ func containsCode(node *yaml.Node) bool {
 	return node.Alias != nil && containsCode(node.Alias)
 }
 
-func LoadDataFiles(names string) ([]any, error) {
-	if names == "" {
-		return nil, nil
-	}
-
-	files := strings.Split(names, ",")
-	documents := make([]any, 0, len(files))
-	for _, name := range files {
+func LoadDataFiles(names []string) ([]any, error) {
+	documents := make([]any, 0, len(names))
+	for _, name := range names {
 		if name == "" {
 			return nil, errors.New("data file list contains an empty path")
 		}
