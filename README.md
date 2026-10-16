@@ -17,6 +17,7 @@ The `mustache` command renders a [Mustache](https://mustache.github.io/) templat
   - [Multiple YAML documents](#multiple-yaml-documents)
 - [Options](#options)
 - [Examples](#examples)
+  - [Lambdas](#lambdas)
 - [Mustache extensions](#mustache-extensions)
   - [Indented interpolation](#indented-interpolation)
   - [Conditional rendering](#conditional-rendering)
@@ -130,6 +131,7 @@ Hi scott!
 | --- | --- |
 | `--base-data` | Single-document YAML file to merge before each main data document. Repeat for multiple files, merged in the given order. |
 | `--disable-html-escape` | Do not HTML-escape tag values. |
+| `--disable-lambda` | Fail if a lambda is invoked, preventing Bash command execution from YAML data. Use when the data is untrusted. |
 | `--keep-missing-tags` | Keep missing tags "as is" in the output instead of replacing them with empty strings. |
 | `--override-data` | Single-document YAML file to merge after each main data document. Repeat for multiple files, merged in the given order. |
 | `--strict` | Fail on missing tags or partial files. Missing partial errors include the full expected file path. |
@@ -179,6 +181,12 @@ Merge defaults and environment-specific overrides into every main data document:
 ```sh
 mustache --base-data defaults.yml --base-data shared.yml --override-data production.yml data.yml template.mustache
 ```
+
+### Lambdas
+
+Lambdas let YAML data run Bash commands during rendering. Define a value with `!code` and a `bash` command, for example `greeting: !code {bash: 'printf world'}`. `{{greeting}}` runs it without arguments; `{{#greeting}}...{{/greeting}}` passes the raw section text as `$1`. Standard output is rendered as a Mustache template using default delimiters for interpolation and current delimiters for sections. A nonzero exit status fails interpolation or renders a section as empty. Bash must be available; only render trusted YAML because commands execute on your machine. See the [lambda specification and examples](specs/lambdas.yml) for details.
+
+Use `mustache --disable-lambda data.yml template.mustache` when YAML data is untrusted. Any attempt to invoke a lambda fails before Bash starts, including lambdas from base and override files. Unused lambda definitions and lambdas in skipped branches do not cause errors.
 
 ## Mustache extensions
 

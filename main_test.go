@@ -119,6 +119,81 @@ func TestRunDisableHTMLEscape(t *testing.T) {
 	}
 }
 
+func TestRunDisableLambda(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.yml")
+	template := filepath.Join(dir, "template.mustache")
+	partial := filepath.Join(dir, "partial.mustache")
+	marker := filepath.Join(dir, "lambda-executed")
+	t.Setenv("MUSTACHE_TEST_LAMBDA_MARKER", filepath.ToSlash(marker))
+	input := "value: safe\nenabled: true\nlambda: &lambda !code {bash: 'printf executed > \"$MUSTACHE_TEST_LAMBDA_MARKER\"; printf result'}\nalias: *lambda\n"
+	for path, contents := range map[string]string{
+		data:    input,
+		partial: "{{lambda}}",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sources := []struct {
+		name  string
+		args  []string
+		input string
+	}{
+		{name: "stdin", args: []string{"-", template}, input: input},
+		{name: "file", args: []string{data, template}},
+		{name: "base", args: []string{"--base-data", data, "-", template}, input: "{}"},
+		{name: "override", args: []string{"--override-data", data, "-", template}, input: "{}"},
+	}
+	tests := []struct {
+		name     string
+		template string
+		exit     int
+		output   string
+	}{
+		{name: "interpolation", template: "{{lambda}}", exit: 1},
+		{name: "unescaped", template: "{{{lambda}}}", exit: 1},
+		{name: "ampersand", template: "{{&lambda}}", exit: 1},
+		{name: "indented", template: "{{|lambda}}", exit: 1},
+		{name: "section", template: "{{#lambda}}text{{/lambda}}", exit: 1},
+		{name: "inverted", template: "{{^lambda}}text{{/lambda}}", exit: 1},
+		{name: "conditional", template: "{{?if lambda==result}}text{{?fi}}", exit: 1},
+		{name: "elif", template: "{{?if value==other}}text{{?elif lambda==result}}text{{?fi}}", exit: 1},
+		{name: "nested", template: "{{#enabled}}{{lambda}}{{/enabled}}", exit: 1},
+		{name: "partial", template: "{{>partial.mustache}}", exit: 1},
+		{name: "alias", template: "{{alias}}", exit: 1},
+		{name: "unused", template: "{{value}}", output: "safe"},
+		{name: "skipped section", template: "{{#missing}}{{lambda}}{{/missing}}{{value}}", output: "safe"},
+		{name: "skipped branch", template: "{{?if value==safe}}{{value}}{{?elif lambda==result}}{{lambda}}{{?fi}}", output: "safe"},
+	}
+	for _, source := range sources {
+		for _, test := range tests {
+			t.Run(source.name+"/"+test.name, func(t *testing.T) {
+				if err := os.WriteFile(template, []byte(test.template), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				var stdout, stderr bytes.Buffer
+				args := append([]string{"--disable-lambda"}, source.args...)
+				exit := run(args, strings.NewReader(source.input), &stdout, &stderr)
+				if exit != test.exit || stdout.String() != test.output {
+					t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
+				}
+				if test.exit == 1 {
+					if !strings.Contains(stderr.String(), "lambda usage is disabled (--disable-lambda)") {
+						t.Fatalf("expected disabled-lambda error, got %q", stderr.String())
+					}
+				} else if stderr.Len() != 0 {
+					t.Fatalf("unexpected stderr: %q", stderr.String())
+				}
+				if _, err := os.Stat(marker); !os.IsNotExist(err) {
+					t.Fatalf("lambda must not execute: marker stat error=%v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestRunMissingTags(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data.yml")

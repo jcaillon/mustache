@@ -29,6 +29,7 @@ type Options struct {
 	Delimiters        [2]string
 	Verbose           io.Writer
 	DisableHTMLEscape bool
+	DisableLambda     bool
 }
 
 type Renderer struct {
@@ -338,7 +339,7 @@ func (r *Renderer) renderSection(w *renderWriter, n node, stack []any, templateP
 	if lambda, ok := value.(BashLambda); ok {
 		output, err := r.runBashLambda(lambda, rawNodes(n.children))
 		if err != nil {
-			if n.token.kind == tokenInverted {
+			if n.token.kind == tokenInverted && !r.options.DisableLambda {
 				return nil
 			}
 			return &Error{File: templatePath, Line: n.token.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
@@ -368,6 +369,9 @@ func (r *Renderer) renderSection(w *renderWriter, n node, stack []any, templateP
 }
 
 func (r *Renderer) runBashLambda(lambda BashLambda, args ...string) ([]byte, error) {
+	if r.options.DisableLambda {
+		return nil, errors.New("lambda usage is disabled (--disable-lambda)")
+	}
 	commandArgs := []string{"-c", string(lambda)}
 	hasArg := len(args) != 0
 	if hasArg {

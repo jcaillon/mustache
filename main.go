@@ -27,6 +27,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return nil
 	})
 	disableHTMLEscape := flags.Bool("disable-html-escape", false, "do not HTML-escape tag values")
+	disableLambda := flags.Bool("disable-lambda", false, "fail if a lambda is invoked, preventing Bash command execution")
 	keepMissing := flags.Bool("keep-missing-tags", false, "keep missing tags in the output")
 	flags.Func("override-data", "YAML file merged after the main data (repeat for multiple files)", func(name string) error {
 		overrideData = append(overrideData, name)
@@ -86,6 +87,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Delimiters:        [2]string{delimiters[0], delimiters[1]},
 		Verbose:           verboseOutput,
 		DisableHTMLEscape: *disableHTMLEscape,
+		DisableLambda:     *disableLambda,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "mustache: %v\n", err)
