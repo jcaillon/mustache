@@ -1,0 +1,136 @@
+overview: |
+  Formatted CLI help, long option names, and terminal color detection.
+tests:
+  - &plain-help
+    name: Plain help with NO_COLOR
+    args: [--help]
+    env: {NO_COLOR: '1', TERM: xterm-256color, COLORTERM: truecolor}
+    stderr: |
+      mustache - render Mustache templates with YAML data
+
+      Usage:
+        mustache [OPTIONS] [--] <YAML> <FILE>
+
+      Arguments:
+        YAML  YAML data file, or - to read from standard input
+        FILE  Mustache template file
+
+      Rendered output is written to standard output.
+
+      Options:
+        --base-data FILE
+            merge YAML FILE before the main data (repeatable)
+        --disable-html-escape
+            do not HTML-escape tag values
+        --disable-lambda
+            fail if a lambda is invoked, preventing Bash command execution
+        --keep-missing-tags
+            keep missing tags in the output
+        --output-separator TEXT
+            write TEXT between rendered YAML documents (default: no separator)
+        --override-data FILE
+            merge YAML FILE after the main data (repeatable)
+        --set-delimiters DELIMITERS
+            opening and closing DELIMITERS separated by whitespace (default: "{{ }}")
+        --strict
+            fail when a tag or partial file is missing
+        -v, --verbose
+            log rendering details to standard error
+        --version
+            print the version and exit
+        -h, --help
+            show this help and exit
+
+      Examples:
+        mustache data.yml template.mustache
+        cat data.yml | mustache - template.mustache
+
+      Environment:
+        NO_COLOR  Set to a non-empty value to disable colors.
+
+      Full documentation:
+        https://github.com/jcaillon/mustache
+
+  - <<: *plain-help
+    name: Short help alias
+    args: [-h]
+
+  - <<: *plain-help
+    name: NO_COLOR zero still disables colors
+    env: {NO_COLOR: '0'}
+
+  - <<: *plain-help
+    name: NO_COLOR false still disables colors
+    env: {NO_COLOR: 'false'}
+
+  - <<: *plain-help
+    name: Unknown terminal without COLORTERM disables colors
+    env: {NO_COLOR: null, TERM: dumb, COLORTERM: ''}
+
+  - <<: *plain-help
+    name: Unset terminal variables disable colors
+    env: {NO_COLOR: null, TERM: null, COLORTERM: null}
+
+  - &colored-help
+    name: xterm-color supports colors
+    args: [--help]
+    env: {NO_COLOR: null, TERM: xterm-color, COLORTERM: ''}
+    stderr_contains:
+      - 'mustache [OPTIONS] [--] <YAML> <FILE>'
+      - '--base-data FILE'
+      - '--disable-html-escape'
+      - '--set-delimiters DELIMITERS'
+      - '-v, --verbose'
+      - '-h, --help'
+      - 'https://github.com/jcaillon/mustache'
+    stderr_pattern: '\x1b\[1;36mUsage:\x1b\[0m\n'
+
+  - <<: *colored-help
+    name: Empty NO_COLOR allows terminal colors
+    env: {NO_COLOR: '', TERM: xterm-256color, COLORTERM: ''}
+
+  - <<: *colored-help
+    name: Empty NO_COLOR allows COLORTERM colors
+    env: {NO_COLOR: '', TERM: other, COLORTERM: truecolor}
+
+  - <<: *colored-help
+    name: xterm-16color supports colors
+    env: {NO_COLOR: null, TERM: xterm-16color, COLORTERM: ''}
+
+  - <<: *colored-help
+    name: xterm-88color supports colors
+    env: {NO_COLOR: null, TERM: xterm-88color, COLORTERM: ''}
+
+  - <<: *colored-help
+    name: xterm-256color supports colors
+    env: {NO_COLOR: null, TERM: xterm-256color, COLORTERM: ''}
+
+  - <<: *colored-help
+    name: linux supports colors
+    env: {NO_COLOR: null, TERM: linux, COLORTERM: ''}
+
+  - <<: *colored-help
+    name: rxvt-16color supports colors
+    env: {NO_COLOR: null, TERM: rxvt-16color, COLORTERM: ''}
+
+  - <<: *colored-help
+    name: konsole-16color supports colors
+    env: {NO_COLOR: null, TERM: konsole-16color, COLORTERM: ''}
+
+  - <<: *colored-help
+    name: COLORTERM enables colors for other terminals
+    env: {NO_COLOR: null, TERM: other, COLORTERM: truecolor}
+
+  - <<: *colored-help
+    name: COLORTERM enables colors without TERM
+    env: {NO_COLOR: null, TERM: null, COLORTERM: '1'}
+
+  - <<: *colored-help
+    name: Missing arguments show formatted help
+    args: []
+    exit_code: 2
+
+  - <<: *colored-help
+    name: Unknown options show formatted help
+    args: [--unknown]
+    exit_code: 2

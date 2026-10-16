@@ -18,31 +18,76 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
+func terminalSupportsColor() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	switch os.Getenv("TERM") {
+	case "xterm-color", "xterm-16color", "xterm-88color", "xterm-256color", "linux", "rxvt-16color", "konsole-16color":
+		return true
+	default:
+		return os.Getenv("COLORTERM") != ""
+	}
+}
+
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("mustache", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var baseData, overrideData []string
-	flags.Func("base-data", "YAML file merged before the main data (repeat for multiple files)", func(name string) error {
+	flags.Func("base-data", "merge YAML `FILE` before the main data (repeatable)", func(name string) error {
 		baseData = append(baseData, name)
 		return nil
 	})
 	disableHTMLEscape := flags.Bool("disable-html-escape", false, "do not HTML-escape tag values")
 	disableLambda := flags.Bool("disable-lambda", false, "fail if a lambda is invoked, preventing Bash command execution")
 	keepMissing := flags.Bool("keep-missing-tags", false, "keep missing tags in the output")
-	outputSeparator := flags.String("output-separator", "", "string written between rendered YAML documents")
-	flags.Func("override-data", "YAML file merged after the main data (repeat for multiple files)", func(name string) error {
+	outputSeparator := flags.String("output-separator", "", "write `TEXT` between rendered YAML documents (default: no separator)")
+	flags.Func("override-data", "merge YAML `FILE` after the main data (repeatable)", func(name string) error {
 		overrideData = append(overrideData, name)
 		return nil
 	})
 	strict := flags.Bool("strict", false, "fail when a tag or partial file is missing")
-	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing delimiters separated by whitespace")
+	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing `DELIMITERS` separated by whitespace")
 	showVersion := flags.Bool("version", false, "print the version and exit")
 	var verbose bool
 	flags.BoolVar(&verbose, "verbose", false, "log rendering details to standard error")
 	flags.BoolVar(&verbose, "v", false, "log rendering details to standard error (shorthand)")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: mustache [OPTIONS] [--] <YAML> <FILE>")
-		flags.PrintDefaults()
+		heading, accent, reset := "", "", ""
+		if terminalSupportsColor() {
+			heading, accent, reset = "\x1b[1;36m", "\x1b[36m", "\x1b[0m"
+		}
+		fmt.Fprintf(stderr, "%smustache%s - render Mustache templates with YAML data\n\n", heading, reset)
+		fmt.Fprintf(stderr, "%sUsage:%s\n  mustache [OPTIONS] [--] <YAML> <FILE>\n\n", heading, reset)
+		fmt.Fprintf(stderr, "%sArguments:%s\n", heading, reset)
+		fmt.Fprintln(stderr, "  YAML  YAML data file, or - to read from standard input")
+		fmt.Fprintln(stderr, "  FILE  Mustache template file")
+		fmt.Fprintln(stderr, "\nRendered output is written to standard output.")
+		fmt.Fprintf(stderr, "\n%sOptions:%s\n", heading, reset)
+		flags.VisitAll(func(option *flag.Flag) {
+			if option.Name == "v" {
+				return
+			}
+			name := "--" + option.Name
+			if option.Name == "verbose" {
+				name = "-v, " + name
+			}
+			value, description := flag.UnquoteUsage(option)
+			if value != "" {
+				name += " " + value
+			}
+			if option.DefValue != "" && option.DefValue != "false" {
+				description += fmt.Sprintf(" (default: %q)", option.DefValue)
+			}
+			fmt.Fprintf(stderr, "  %s%s%s\n      %s\n", accent, name, reset, description)
+		})
+		fmt.Fprintf(stderr, "  %s-h, --help%s\n      show this help and exit\n", accent, reset)
+		fmt.Fprintf(stderr, "\n%sExamples:%s\n", heading, reset)
+		fmt.Fprintln(stderr, "  mustache data.yml template.mustache")
+		fmt.Fprintln(stderr, "  cat data.yml | mustache - template.mustache")
+		fmt.Fprintf(stderr, "\n%sEnvironment:%s\n", heading, reset)
+		fmt.Fprintln(stderr, "  NO_COLOR  Set to a non-empty value to disable colors.")
+		fmt.Fprintf(stderr, "\n%sFull documentation:%s\n  %shttps://github.com/jcaillon/mustache%s\n", heading, reset, accent, reset)
 	}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

@@ -42,6 +42,8 @@ mustache [OPTIONS] [--] <YAML> <FILE>
 
 Pass a YAML data source followed by a Mustache template file. The rendered result is printed to standard output. Use `-` as the YAML argument to read the data from standard input.
 
+Run `mustache --help` for options and examples. Help uses colors when `TERM` identifies a supported color terminal or `COLORTERM` is non-empty. Set `NO_COLOR` to any non-empty value to disable colors.
+
 Use `--base-data` and `--override-data` to merge additional single-document YAML files into each document from the main data source. Each option accepts one file path; repeat the option for each additional file. Files are merged in this order: base files in option order, the current main document, then override files in option order. Mappings are merged recursively; all other values, including lists, replace the earlier value. Mustache will still render multiple times depending on the number of documents in the main data source.
 
 ## How it works

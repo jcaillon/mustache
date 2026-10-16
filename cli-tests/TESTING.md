@@ -32,7 +32,7 @@ Optional properties:
 | `stdout` | Exact expected standard output | Empty |
 | `stderr` | Exact expected standard error | Empty |
 | `exit_code` | Expected return value | `0` |
-| `env` | Environment variables set for this test and restored afterward | None |
+| `env` | Environment variables set for this test, or unset with `null`, and restored afterward | None |
 | `absent_files` | Paths that must not exist after running, for lambda safety checks | None |
 | `stderr_contains` | List of required substrings, instead of an exact stderr comparison | None |
 | `stderr_pattern` | Go regular expression to match stderr, instead of an exact comparison | None |

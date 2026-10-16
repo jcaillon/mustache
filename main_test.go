@@ -17,18 +17,18 @@ type cliSpec struct {
 }
 
 type cliTest struct {
-	Name           string            `yaml:"name"`
-	Desc           string            `yaml:"desc"`
-	Args           []string          `yaml:"args"`
-	Files          []cliFile         `yaml:"files"`
-	Env            map[string]string `yaml:"env"`
-	Stdin          string            `yaml:"stdin"`
-	Stdout         string            `yaml:"stdout"`
-	Stderr         string            `yaml:"stderr"`
-	StderrContains []string          `yaml:"stderr_contains"`
-	StderrPattern  string            `yaml:"stderr_pattern"`
-	ExitCode       int               `yaml:"exit_code"`
-	AbsentFiles    []string          `yaml:"absent_files"`
+	Name           string             `yaml:"name"`
+	Desc           string             `yaml:"desc"`
+	Args           []string           `yaml:"args"`
+	Files          []cliFile          `yaml:"files"`
+	Env            map[string]*string `yaml:"env"`
+	Stdin          string             `yaml:"stdin"`
+	Stdout         string             `yaml:"stdout"`
+	Stderr         string             `yaml:"stderr"`
+	StderrContains []string           `yaml:"stderr_contains"`
+	StderrPattern  string             `yaml:"stderr_pattern"`
+	ExitCode       int                `yaml:"exit_code"`
+	AbsentFiles    []string           `yaml:"absent_files"`
 }
 
 type cliFile struct {
@@ -76,7 +76,14 @@ func TestCLI(t *testing.T) {
 					}
 				}
 				for name, value := range test.Env {
-					t.Setenv(name, expand(value))
+					if value != nil {
+						t.Setenv(name, expand(*value))
+					} else {
+						t.Setenv(name, "")
+						if err := os.Unsetenv(name); err != nil {
+							t.Fatal(err)
+						}
+					}
 				}
 				args := make([]string, len(test.Args))
 				for i, arg := range test.Args {
