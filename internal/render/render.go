@@ -68,14 +68,39 @@ func (r *Renderer) Render(w io.Writer, template io.Reader, templatePath string, 
 	}
 	r.logf("rendering template %s", displayTemplatePath(templatePath))
 	l := newLexer(template, r.options.Delimiters[0], r.options.Delimiters[1])
-	err := r.renderStream(w, l, []any{data}, templatePath, nil)
+	err := r.renderStream(&renderWriter{Writer: w}, l, []any{data}, templatePath, nil)
 	if err == nil {
 		r.logf("finished template %s", displayTemplatePath(templatePath))
 	}
 	return err
 }
 
-func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any, templatePath string, overrides map[string]block) error {
+type renderWriter struct {
+	io.Writer
+	line []byte
+}
+
+func (w *renderWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	w.track(string(p[:n]))
+	return n, err
+}
+
+func (w *renderWriter) WriteString(s string) (int, error) {
+	n, err := io.WriteString(w.Writer, s)
+	w.track(s[:n])
+	return n, err
+}
+
+func (w *renderWriter) track(s string) {
+	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
+		w.line = w.line[:0]
+		s = s[i+1:]
+	}
+	w.line = append(w.line, s...)
+}
+
+func (r *Renderer) renderStream(w *renderWriter, l *lexer, stack []any, templatePath string, overrides map[string]block) error {
 	for {
 		tok, err := l.next()
 		if errors.Is(err, io.EOF) {
@@ -112,7 +137,7 @@ func (r *Renderer) renderStream(w io.Writer, l *lexer, stack []any, templatePath
 	}
 }
 
-func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any, templatePath string) error {
+func (r *Renderer) renderVariable(w *renderWriter, tok token, stack []any, templatePath string) error {
 	value, found := lookup(tok.name, stack)
 	r.logLookup(tok.name, templatePath, tok.line, found)
 	if !found {
@@ -134,13 +159,22 @@ func (r *Renderer) renderVariable(w io.Writer, tok token, stack []any, templateP
 			return &Error{File: templatePath, Line: tok.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
 		}
 		var rendered strings.Builder
-		if err := r.renderStream(&rendered, newLexer(bytes.NewReader(output), "{{", "}}"), stack, "(lambda code for tag "+tok.name+")", nil); err != nil {
+		if err := r.renderStream(&renderWriter{Writer: &rendered}, newLexer(bytes.NewReader(output), "{{", "}}"), stack, "(lambda code for tag "+tok.name+")", nil); err != nil {
 			return err
 		}
 		text = rendered.String()
 	}
 	if tok.kind == tokenVariable && !r.options.DisableHTMLEscape {
 		text = escapeHTML(text)
+	}
+	if tok.indented && strings.Contains(text, "\n") {
+		prefix := strings.Map(func(c rune) rune {
+			if c == '\t' {
+				return c
+			}
+			return ' '
+		}, string(w.line))
+		text = strings.TrimPrefix(indent(text, prefix), prefix)
 	}
 	_, err := io.WriteString(w, text)
 	return err
@@ -204,7 +238,7 @@ type block struct {
 	indent   string
 }
 
-func (r *Renderer) renderNode(w io.Writer, n node, stack []any, templatePath string, overrides map[string]block) error {
+func (r *Renderer) renderNode(w *renderWriter, n node, stack []any, templatePath string, overrides map[string]block) error {
 	switch n.token.kind {
 	case tokenParent:
 		return r.renderParent(w, n, stack, templatePath, overrides)
@@ -215,7 +249,7 @@ func (r *Renderer) renderNode(w io.Writer, n node, stack []any, templatePath str
 	}
 }
 
-func (r *Renderer) renderSection(w io.Writer, n node, stack []any, templatePath string, overrides map[string]block) error {
+func (r *Renderer) renderSection(w *renderWriter, n node, stack []any, templatePath string, overrides map[string]block) error {
 	value, found := lookup(n.token.name, stack)
 	r.logLookup(n.token.name, templatePath, n.token.line, found)
 	if !found {
@@ -313,7 +347,7 @@ func writeRawNodes(raw *strings.Builder, nodes []node) {
 	}
 }
 
-func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templatePath string, overrides map[string]block) error {
+func (r *Renderer) renderNodes(w *renderWriter, nodes []node, stack []any, templatePath string, overrides map[string]block) error {
 	for _, n := range nodes {
 		switch n.token.kind {
 		case tokenText:
@@ -337,7 +371,7 @@ func (r *Renderer) renderNodes(w io.Writer, nodes []node, stack []any, templateP
 	return nil
 }
 
-func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePath string, overrides map[string]block) error {
+func (r *Renderer) renderPartial(w *renderWriter, tok token, stack []any, templatePath string, overrides map[string]block) error {
 	name := tok.name
 	if strings.HasPrefix(name, "*") {
 		if strings.HasPrefix(name, "**") {
@@ -379,7 +413,7 @@ func (r *Renderer) renderPartial(w io.Writer, tok token, stack []any, templatePa
 	return r.renderStream(w, l, stack, partialPath, overrides)
 }
 
-func (r *Renderer) renderParent(w io.Writer, n node, stack []any, templatePath string, overrides map[string]block) error {
+func (r *Renderer) renderParent(w *renderWriter, n node, stack []any, templatePath string, overrides map[string]block) error {
 	partial, partialPath, ok, err := r.loadPartial(templatePath, n.token.name)
 	if err != nil {
 		return &Error{File: templatePath, Line: n.token.line, Err: err}
@@ -412,14 +446,14 @@ func (r *Renderer) renderParent(w io.Writer, n node, stack []any, templatePath s
 	return r.renderStream(w, newLexer(source, r.options.Delimiters[0], r.options.Delimiters[1]), stack, partialPath, merged)
 }
 
-func (r *Renderer) renderBlock(w io.Writer, n node, stack []any, templatePath string, overrides map[string]block) error {
+func (r *Renderer) renderBlock(w *renderWriter, n node, stack []any, templatePath string, overrides map[string]block) error {
 	defaultBlock := makeBlock(n)
 	selected, ok := overrides[n.token.name]
 	if !ok {
 		selected = defaultBlock
 	}
 	var output strings.Builder
-	if err := r.renderNodes(&output, selected.children, stack, templatePath, overrides); err != nil {
+	if err := r.renderNodes(&renderWriter{Writer: &output, line: append([]byte(nil), w.line...)}, selected.children, stack, templatePath, overrides); err != nil {
 		return err
 	}
 	text := dedent(output.String(), selected.indent)
@@ -678,13 +712,14 @@ const (
 )
 
 type token struct {
-	kind   tokenKind
-	name   string
-	raw    string
-	indent string
-	line   int
-	open   string
-	close  string
+	kind     tokenKind
+	name     string
+	raw      string
+	indent   string
+	indented bool
+	line     int
+	open     string
+	close    string
 }
 
 type lexer struct {
@@ -825,7 +860,11 @@ func (l *lexer) makeToken(raw, inner string, triple bool) (token, error) {
 	}
 	kind := tokenVariable
 	name := trimmed
+	indented := false
 	switch trimmed[0] {
+	case '|':
+		name = strings.TrimSpace(trimmed[1:])
+		indented = true
 	case '&':
 		kind, name = tokenUnescaped, strings.TrimSpace(trimmed[1:])
 	case '#':
@@ -862,7 +901,7 @@ func (l *lexer) makeToken(raw, inner string, triple bool) (token, error) {
 	if err := validateName(name); err != nil {
 		return token{}, err
 	}
-	return token{kind: kind, name: name, raw: raw, open: open, close: close}, nil
+	return token{kind: kind, name: name, raw: raw, indented: indented, open: open, close: close}, nil
 }
 
 func standalone(tokens []token) []token {

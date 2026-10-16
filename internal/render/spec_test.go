@@ -123,6 +123,8 @@ func TestRenderAcrossBufferBoundaries(t *testing.T) {
 	}{
 		{name: "delimiter", template: strings.Repeat("x", 4095) + "{{name}}", want: strings.Repeat("x", 4095) + "Ada"},
 		{name: "standalone", template: strings.Repeat(" ", 5000) + "{{! comment}}\nafter", want: "after"},
+		{name: "indented", template: strings.Repeat("x", 5000) + "{{|text}}", want: strings.Repeat("x", 5000) + "Ada\n" + strings.Repeat(" ", 5000) + "Lovelace"},
+		{name: "indented unicode", template: strings.Repeat("x", 4095) + "é{{|text}}", want: strings.Repeat("x", 4095) + "éAda\n" + strings.Repeat(" ", 4096) + "Lovelace"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -131,7 +133,7 @@ func TestRenderAcrossBufferBoundaries(t *testing.T) {
 				t.Fatal(err)
 			}
 			var output strings.Builder
-			if err := renderer.Render(&output, strings.NewReader(test.template), "", map[string]any{"name": "Ada"}); err != nil {
+			if err := renderer.Render(&output, strings.NewReader(test.template), "", map[string]any{"name": "Ada", "text": "Ada\nLovelace"}); err != nil {
 				t.Fatal(err)
 			}
 			if output.String() != test.want {
@@ -172,6 +174,74 @@ func TestDisableHTMLEscape(t *testing.T) {
 	}
 	if output.String() != "<b>&</b>" {
 		t.Fatalf("rendered output mismatch: want %q, got %q", "<b>&</b>", output.String())
+	}
+}
+
+func TestIndentedInterpolationOptions(t *testing.T) {
+	tests := []struct {
+		name     string
+		options  Options
+		template string
+		want     string
+	}{
+		{
+			name:     "disable HTML escape",
+			options:  Options{DisableHTMLEscape: true},
+			template: "  {{|text}}",
+			want:     "  <b>\n  &",
+		},
+		{
+			name:     "keep missing",
+			options:  Options{Missing: MissingKeep},
+			template: "  {{ |missing }}\n",
+			want:     "  {{ |missing }}\n",
+		},
+		{
+			name:     "configured delimiters",
+			options:  Options{Delimiters: [2]string{"<%", "%>"}},
+			template: "ID: <%|text%>",
+			want:     "ID: &lt;b&gt;\n    &amp;",
+		},
+		{
+			name:     "inline block",
+			template: "ID: {{$body}}{{|text}}{{/body}}",
+			want:     "ID: &lt;b&gt;\n    &amp;",
+		},
+		{
+			name:     "reindented block",
+			options:  Options{Partials: map[string]string{"layout": "  {{$body}}{{/body}}"}},
+			template: "{{<layout}}{{$body}}\n    {{|text}}\n{{/body}}{{/layout}}",
+			want:     "  &lt;b&gt;\n  &amp;\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			renderer, err := New(test.options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var output strings.Builder
+			if err := renderer.Render(&output, strings.NewReader(test.template), "", map[string]any{"text": "<b>\n&"}); err != nil {
+				t.Fatal(err)
+			}
+			if output.String() != test.want {
+				t.Fatalf("rendered output mismatch: want %q, got %q", test.want, output.String())
+			}
+		})
+	}
+
+	renderer, err := New(Options{Missing: MissingError})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = renderer.Render(&strings.Builder{}, strings.NewReader("\n  {{|missing}}"), "", map[string]any{})
+	var renderErr *Error
+	if !errors.As(err, &renderErr) || renderErr.Line != 2 || renderErr.Err.Error() != `missing tag "missing"` {
+		t.Fatalf("expected contextual missing-tag error, got %v", err)
+	}
+	err = renderer.Render(&failAfterWriter{remaining: 2}, strings.NewReader("  {{|text}}"), "", map[string]any{"text": "first\nsecond"})
+	if !strings.Contains(fmt.Sprint(err), "output stopped") {
+		t.Fatalf("expected output error, got %v", err)
 	}
 }
 
@@ -244,6 +314,8 @@ func TestMalformedSections(t *testing.T) {
 		"{{#a}}{{/b}}",
 		"{{/a}}",
 		"{{name",
+		"{{|}}",
+		"{{|two names}}",
 	}
 	for _, template := range tests {
 		t.Run(template, func(t *testing.T) {

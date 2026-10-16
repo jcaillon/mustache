@@ -17,6 +17,8 @@ The `mustache` command renders a [Mustache](https://mustache.github.io/) templat
   - [Multiple YAML documents](#multiple-yaml-documents)
 - [Options](#options)
 - [Examples](#examples)
+- [Mustache extensions](#mustache-extensions)
+  - [Indented interpolation](#indented-interpolation)
 - [Development](#development)
 - [Releasing](#releasing)
 
@@ -176,6 +178,41 @@ Merge defaults and environment-specific overrides into every main data document:
 ```sh
 mustache --base-data defaults.yml --base-data shared.yml --override-data production.yml data.yml template.mustache
 ```
+
+## Mustache extensions
+
+The following feature extends the original Mustache specification and may not be supported by other Mustache implementations.
+
+### Indented interpolation
+
+Use `{{|name}}` instead of `{{name}}` to align continuation lines of a multiline value with the tag's position in the rendered output. Regular interpolation leaves continuation lines unindented.
+
+For example, with this YAML data:
+
+```yaml
+text: |-
+  First line.
+  Second line.
+```
+
+And this template:
+
+```mustache
+message: {{|text}}
+```
+
+The output is:
+
+```text
+message: First line.
+         Second line.
+```
+
+Indentation is based on the current rendered line, including output from earlier tags, rather than the tag's position in the template source. Spaces and tabs in that prefix are preserved; other characters are replaced with spaces. Continuation lines, including blank lines within the value, receive this prefix in addition to any existing whitespace. A final newline does not add trailing indentation or affect following template text.
+
+Name lookup, string coercion, HTML escaping, lambda expansion, and missing-tag handling work as in regular interpolation. LF and CRLF line endings are preserved.
+
+See the [indented interpolation specification and test cases](specs/extra-indented-interpolation.yml) for the complete behavior and more examples.
 
 ## Development
 

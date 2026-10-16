@@ -1,0 +1,285 @@
+overview: |
+  Indented interpolation tags behave exactly like regular interpolation tags,
+  but they preserve the indentation level of the tag in the rendered output.
+
+  The syntax is {{|name}}. Name lookup, string coercion, HTML escaping, and
+  lambda expansion behave as they do for regular interpolation tags.
+
+  Indentation is determined from the current rendered line before the tag,
+  not from the tag's position in the template. Spaces and tabs in that prefix
+  are preserved; all other characters are replaced with spaces.
+
+  The first line of the value is inserted normally. Each subsequent line,
+  including empty lines within the value, receives the indentation prefix.
+  Existing whitespace in the value is preserved. A final newline does not
+  add indentation after the value ends. Template text following the tag is
+  otherwise unchanged. LF and CRLF line endings are preserved.
+
+  Like regular interpolation tags, these tags MUST NOT be treated as standalone.
+tests:
+  - name: Indented Interpolation
+    desc: New lines of an indented interpolation tag preserve the indentation level.
+    data:
+      text: |-
+        This is a long text.
+        Each line should be indented at the same level.
+        Indentation should be preserved.
+    template: |2
+          {{|text}}
+    expected: |2
+          This is a long text.
+          Each line should be indented at the same level.
+          Indentation should be preserved.
+  - name: Indented Interpolation works for any indentation characters
+    desc: All lines are indented considering the level of the interpolation tag, even if the indentation does not use spaces or tabs.
+    data:
+      text: |-
+        This is a long text.
+        Each line should be indented at the same level.
+        Indentation should be preserved.
+    template: |
+      statement:  {{|text}}
+    expected: |
+      statement:  This is a long text.
+                  Each line should be indented at the same level.
+                  Indentation should be preserved.
+
+  # Indentation and line boundaries
+
+  - name: No Indentation
+    desc: A tag at the beginning of the rendered line adds no indentation.
+    data: { text: "first\nsecond" }
+    template: '{{|text}}'
+    expected: "first\nsecond"
+
+  - name: Single Line
+    desc: A single-line value is inserted without duplicating its prefix or altering surrounding whitespace.
+    data: { text: 'value' }
+    template: '  [ {{|text}} ]  '
+    expected: '  [ value ]  '
+
+  - name: Mixed Spaces and Tabs
+    desc: Continuation indentation preserves spaces and tabs but replaces other prefix characters with spaces.
+    data: { text: "first\nsecond" }
+    template: "\titem:\t {{|text}}"
+    expected: "\titem:\t first\n\t     \t second"
+
+  - name: Current Line Only
+    desc: Only the rendered text since the last newline contributes to indentation.
+    data: { text: "first\nsecond" }
+    template: "a much longer preceding line\n  {{|text}}"
+    expected: "a much longer preceding line\n  first\n  second"
+
+  - name: Preserve Value Whitespace
+    desc: Indentation is added to, rather than replacing, whitespace already present in the value.
+    data: { text: " first\n  second\n\tthird" }
+    template: '  {{|text}}'
+    expected: "   first\n    second\n  \tthird"
+
+  - name: Internal Blank Lines
+    desc: Empty lines within a multiline value receive the same indentation as nonempty lines.
+    data: { text: "first\n\n\nlast" }
+    template: '  {{|text}}'
+    expected: "  first\n  \n  \n  last"
+
+  - name: Leading Newline
+    desc: A leading newline leaves the original prefix in place and indents the next line.
+    data: { text: "\nfirst" }
+    template: '  {{|text}}'
+    expected: "  \n  first"
+
+  - name: Trailing Newline
+    desc: A final newline does not leave trailing indentation at the end of the output.
+    data: { text: "first\nsecond\n" }
+    template: '  {{|text}}'
+    expected: "  first\n  second\n"
+
+  - name: Multiple Trailing Newlines
+    desc: Blank lines before the final newline are indented without adding spaces after the value ends.
+    data: { text: "first\n\n" }
+    template: '  {{|text}}'
+    expected: "  first\n  \n"
+
+  - name: Newline Only
+    desc: A value containing only a newline adds neither a second prefix nor a phantom final line.
+    data: { text: "\n" }
+    template: '  {{|text}}'
+    expected: "  \n"
+
+  - name: Inline Suffix
+    desc: Text after the tag follows the last value line and is not repeated on earlier lines.
+    data: { text: "first\nsecond" }
+    template: 'item: {{|text}}!'
+    expected: "item: first\n      second!"
+
+  - name: Suffix After Trailing Newline
+    desc: Indentation does not leak into template text following a value that ends in a newline.
+    data: { text: "first\nsecond\n" }
+    template: '  {{|text}}after'
+    expected: "  first\n  second\nafter"
+
+  - name: Following Template Line
+    desc: Indentation applies only to the value and does not change subsequent template lines.
+    data: { text: "first\nsecond" }
+    template: "  {{|text}}\n next\n"
+    expected: "  first\n  second\n next\n"
+
+  - name: CRLF Line Endings
+    desc: CRLF line endings are preserved in both the value and the template.
+    data: { text: "first\r\nsecond\r\n" }
+    template: "  {{|text}}after\r\n"
+    expected: "  first\r\n  second\r\nafter\r\n"
+
+  # Regular interpolation behavior
+
+  - name: Empty Value
+    desc: An empty value preserves the tag's surrounding whitespace and template newline.
+    data: { text: '' }
+    template: "before\n  {{|text}}\nafter"
+    expected: "before\n  \nafter"
+
+  - name: Null Value
+    desc: A null value renders as an empty string without stripping the surrounding line.
+    data: { text: null }
+    template: "  {{|text}}\n"
+    expected: "  \n"
+
+  - name: Missing Value
+    desc: A missing value renders as an empty string without stripping the surrounding line.
+    data: { }
+    template: "  {{|text}}\n"
+    expected: "  \n"
+
+  - name: Integer Value
+    desc: Non-string values use the same string coercion as regular interpolation.
+    data: { text: 85 }
+    template: '  {{|text}} mph'
+    expected: '  85 mph'
+
+  - name: HTML Escaping
+    desc: Each line is HTML escaped just as in regular interpolation.
+    data: { text: "<&>\n\"'" }
+    template: '  {{|text}}'
+    expected: "  &lt;&amp;&gt;\n  &quot;&#39;"
+
+  - name: No Re-interpolation
+    desc: Ordinary string values containing Mustache tags are not rendered again.
+    data: { text: "{{name}}\n{{|name}}", name: 'wrong' }
+    template: '  {{|text}}'
+    expected: "  {{name}}\n  {{|name}}"
+
+  - name: Regular Interpolation Is Unchanged
+    desc: Only the pipe-prefixed interpolation indents multiline output.
+    data: { text: "first\nsecond" }
+    template: "  {{text}}\n  {{|text}}"
+    expected: "  first\nsecond\n  first\n  second"
+
+  - name: Padding Whitespace
+    desc: Superfluous whitespace around the pipe-prefixed name is ignored.
+    data: { text: "first\nsecond" }
+    template: '  {{ |text }}'
+    expected: "  first\n  second"
+
+  - name: Dotted Name
+    desc: Dotted names resolve nested values as in regular interpolation.
+    data: { person: { text: "first\nsecond" } }
+    template: '  {{|person.text}}'
+    expected: "  first\n  second"
+
+  - name: Implicit Iterator
+    desc: A single period resolves the current context.
+    data: "first\nsecond"
+    template: '  {{|.}}'
+    expected: "  first\n  second"
+
+  - name: Section Context
+    desc: Indented interpolation uses the innermost section context rather than a shadowed outer value.
+    data: { text: 'wrong', person: { text: "first\nsecond" } }
+    template: '{{#person}}  {{|text}}{{/person}}'
+    expected: "  first\n  second"
+
+  - name: Parent Context
+    desc: Lookup falls back to outer contexts when the current context does not contain the name.
+    data: { text: "first\nsecond", person: { name: 'Ada' } }
+    template: '{{#person}}  {{|text}}{{/person}}'
+    expected: "  first\n  second"
+
+  - name: Alternate Delimiters
+    desc: Indented interpolation respects delimiter changes.
+    data: { text: "first\nsecond" }
+    template: "{{=<% %>=}}\n  <%|text%>"
+    expected: "  first\n  second"
+
+  # Indentation follows rendered output, not template source
+
+  - name: Previous Interpolation
+    desc: Earlier tag output determines indentation instead of the source length of that tag.
+    data: { prefix: 'ID', text: "first\nsecond" }
+    template: '{{prefix}}: {{|text}}'
+    expected: "ID: first\n    second"
+
+  - name: Previous Multiline Interpolation
+    desc: A newline in earlier tag output resets the prefix used for indentation.
+    data: { prefix: "a long heading\nx:", text: "first\nsecond" }
+    template: '{{prefix}} {{|text}}'
+    expected: "a long heading\nx: first\n   second"
+
+  - name: Previous Escaped Interpolation
+    desc: Indentation uses the length of the actual escaped output, not the unescaped value.
+    data: { prefix: '<', text: "first\nsecond" }
+    template: '{{prefix}} {{|text}}'
+    expected: "&lt; first\n     second"
+
+  - name: Previous Interpolation With Tabs
+    desc: Tabs produced by an earlier interpolation are preserved in continuation indentation.
+    data: { prefix: "\tID:", text: "first\nsecond" }
+    template: '{{prefix}} {{|text}}'
+    expected: "\tID: first\n\t    second"
+
+  - name: Multiple Indented Interpolations
+    desc: Each tag uses its own position on the current rendered line, including earlier indented output.
+    data: { first: "a\nb", second: "c\nd" }
+    template: '  {{|first}} + {{|second}}'
+    expected: "  a\n  b + c\n      d"
+
+  - name: Non-rendering Tags
+    desc: Comments and skipped sections contribute no width to the rendered prefix.
+    data: { show: false, text: "first\nsecond" }
+    template: 'x{{#show}}hidden{{/show}}{{! comment }} {{|text}}'
+    expected: "x first\n  second"
+
+  - name: Repeated Section
+    desc: Indentation is recomputed for every iteration rather than cached at the tag's source position.
+    data: { items: [ "a\nb", "c\nd" ] }
+    template: '{{#items}}{{|.}};{{/items}}'
+    expected: "a\nb;c\n  d;"
+
+  - name: Standalone Partial Indentation
+    desc: Indentation inherited from a standalone partial combines with the tag's local indentation.
+    data: { text: "first\nsecond" }
+    template: '  {{>partial}}'
+    partials: { partial: "  {{|text}}\n" }
+    expected: "    first\n    second\n"
+
+  - name: Inline Partial
+    desc: An indented tag inside an inline partial accounts for the caller's rendered prefix.
+    data: { text: "first\nsecond" }
+    template: 'item: {{>partial}}'
+    partials: { partial: '  {{|text}}' }
+    expected: "item:   first\n        second"
+
+  - name: Previous Partial
+    desc: Output from a preceding partial contributes to the indentation of a subsequent tag.
+    data: { text: "first\nsecond" }
+    template: '{{>prefix}} {{|text}}'
+    partials: { prefix: 'ID:' }
+    expected: "ID: first\n    second"
+
+  - name: Lambda Expansion
+    desc: Lambda output is rendered against the current context before its resulting lines are indented.
+    data:
+      text: "first\nsecond"
+      lambda: !code
+        bash: 'printf "%s" "{{text}}"'
+    template: '  {{|lambda}}'
+    expected: "  first\n  second"

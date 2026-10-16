@@ -1,0 +1,15 @@
+yaml: |-
+  age: 39
+  fruits:
+    - pomme
+    - banane
+    - orange
+text: |-
+  This is text block.
+  Another line.
+  And it continues.
+  The end.
+another: |-
+  |-
+    oh cool
+simple: coucou
