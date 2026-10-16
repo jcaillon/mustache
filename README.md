@@ -19,6 +19,7 @@ The `mustache` command renders a [Mustache](https://mustache.github.io/) templat
 - [Examples](#examples)
 - [Mustache extensions](#mustache-extensions)
   - [Indented interpolation](#indented-interpolation)
+  - [Conditional rendering](#conditional-rendering)
 - [Development](#development)
 - [Releasing](#releasing)
 
@@ -181,7 +182,7 @@ mustache --base-data defaults.yml --base-data shared.yml --override-data product
 
 ## Mustache extensions
 
-The following feature extends the original Mustache specification and may not be supported by other Mustache implementations.
+The following features extend the original Mustache specification and may not be supported by other Mustache implementations.
 
 ### Indented interpolation
 
@@ -213,6 +214,26 @@ Indentation is based on the current rendered line, including output from earlier
 Name lookup, string coercion, HTML escaping, lambda expansion, and missing-tag handling work as in regular interpolation. LF and CRLF line endings are preserved.
 
 See the [indented interpolation specification and test cases](specs/extra-indented-interpolation.yml) for the complete behavior and more examples.
+
+### Conditional rendering
+
+Use `{{?if name==literal}}`, optional `{{?elif name==literal}}` branches, `{{?else}}`, and `{{?fi}}` to render only the first matching branch:
+
+```mustache
+{{?if environment==production}}
+Production configuration
+{{?elif environment=~^qa}}
+QA configuration
+{{?else}}
+Other configuration
+{{?fi}}
+```
+
+The left operand uses normal Mustache lookup and string coercion without HTML escaping. The right operand is literal text, not a data lookup. Operators are `==`, `!=`, `=~` (regular expression match), and `!~` (negated match). Regular expressions use [Go's syntax](https://pkg.go.dev/regexp/syntax) and match any part of the value unless anchored.
+
+Blocks may be nested and do not change the current context. Skipped branches are not evaluated. Standalone control-tag lines are removed, just like section-tag lines. Missing operands compare as empty strings by default, fail with `--strict`, and preserve the entire block unchanged with `--keep-missing-tags`.
+
+See the [conditional rendering specification and test cases](specs/extra-conditional.yml) for the complete behavior.
 
 ## Development
 

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strings"
 )
@@ -119,7 +120,7 @@ func (r *Renderer) renderStream(w *renderWriter, l *lexer, stack []any, template
 			if err := r.renderVariable(w, tok, stack, templatePath); err != nil {
 				return err
 			}
-		case tokenSection, tokenInverted, tokenParent, tokenBlock:
+		case tokenSection, tokenInverted, tokenParent, tokenBlock, tokenIf:
 			node, err := parseSection(l, tok)
 			if err != nil {
 				return err
@@ -129,6 +130,8 @@ func (r *Renderer) renderStream(w *renderWriter, l *lexer, stack []any, template
 			}
 		case tokenEnd:
 			return fmt.Errorf("unexpected closing section %q", tok.name)
+		case tokenElif, tokenElse, tokenFi:
+			return fmt.Errorf("unexpected conditional tag %q", tok.raw)
 		case tokenPartial:
 			if err := r.renderPartial(w, tok, stack, templatePath, overrides); err != nil {
 				return err
@@ -138,31 +141,16 @@ func (r *Renderer) renderStream(w *renderWriter, l *lexer, stack []any, template
 }
 
 func (r *Renderer) renderVariable(w *renderWriter, tok token, stack []any, templatePath string) error {
-	value, found := lookup(tok.name, stack)
-	r.logLookup(tok.name, templatePath, tok.line, found)
+	text, found, err := r.variableValue(tok, stack, templatePath)
+	if err != nil {
+		return err
+	}
 	if !found {
-		switch r.options.Missing {
-		case MissingEmpty:
-			return nil
-		case MissingKeep:
+		if r.options.Missing == MissingKeep {
 			_, err := io.WriteString(w, tok.raw)
 			return err
-		default:
-			return &Error{File: templatePath, Line: tok.line, Err: fmt.Errorf("missing tag %q", tok.name)}
 		}
-	}
-
-	text := stringify(value)
-	if lambda, ok := value.(BashLambda); ok {
-		output, err := r.runBashLambda(lambda)
-		if err != nil {
-			return &Error{File: templatePath, Line: tok.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
-		}
-		var rendered strings.Builder
-		if err := r.renderStream(&renderWriter{Writer: &rendered}, newLexer(bytes.NewReader(output), "{{", "}}"), stack, "(lambda code for tag "+tok.name+")", nil); err != nil {
-			return err
-		}
-		text = rendered.String()
+		return nil
 	}
 	if tok.kind == tokenVariable && !r.options.DisableHTMLEscape {
 		text = escapeHTML(text)
@@ -176,8 +164,35 @@ func (r *Renderer) renderVariable(w *renderWriter, tok token, stack []any, templ
 		}, string(w.line))
 		text = strings.TrimPrefix(indent(text, prefix), prefix)
 	}
-	_, err := io.WriteString(w, text)
+	_, err = io.WriteString(w, text)
 	return err
+}
+
+func (r *Renderer) variableValue(tok token, stack []any, templatePath string) (string, bool, error) {
+	value, found := lookup(tok.name, stack)
+	r.logLookup(tok.name, templatePath, tok.line, found)
+	if !found {
+		switch r.options.Missing {
+		case MissingEmpty, MissingKeep:
+			return "", false, nil
+		default:
+			return "", false, &Error{File: templatePath, Line: tok.line, Err: fmt.Errorf("missing tag %q", tok.name)}
+		}
+	}
+
+	text := stringify(value)
+	if lambda, ok := value.(BashLambda); ok {
+		output, err := r.runBashLambda(lambda)
+		if err != nil {
+			return "", true, &Error{File: templatePath, Line: tok.line, Err: fmt.Errorf("execute bash lambda: %w", err)}
+		}
+		var rendered strings.Builder
+		if err := r.renderStream(&renderWriter{Writer: &rendered}, newLexer(bytes.NewReader(output), "{{", "}}"), stack, "(lambda code for tag "+tok.name+")", nil); err != nil {
+			return "", true, err
+		}
+		text = rendered.String()
+	}
+	return text, true, nil
 }
 
 type node struct {
@@ -188,16 +203,24 @@ type node struct {
 
 func parseSection(l *lexer, opener token) (node, error) {
 	n := node{token: opener}
+	closingKind := tokenEnd
+	if opener.kind == tokenIf {
+		closingKind = tokenFi
+	}
+	seenElse := false
 	for {
 		tok, err := l.next()
 		if errors.Is(err, io.EOF) {
+			if opener.kind == tokenIf {
+				return node{}, fmt.Errorf("unclosed conditional")
+			}
 			return node{}, fmt.Errorf("unclosed section %q", opener.name)
 		}
 		if err != nil {
 			return node{}, err
 		}
-		if tok.kind == tokenEnd {
-			if tok.name != opener.name {
+		if tok.kind == tokenEnd || tok.kind == tokenFi {
+			if tok.kind != closingKind || tok.kind == tokenEnd && tok.name != opener.name {
 				return node{}, fmt.Errorf("section %q closed by %q", opener.name, tok.name)
 			}
 			n.closeRaw = tok.raw
@@ -221,7 +244,13 @@ func parseSection(l *lexer, opener token) (node, error) {
 			}
 			return n, nil
 		}
-		if tok.kind == tokenSection || tok.kind == tokenInverted || tok.kind == tokenParent || tok.kind == tokenBlock {
+		if tok.kind == tokenElif || tok.kind == tokenElse {
+			if opener.kind != tokenIf || seenElse {
+				return node{}, fmt.Errorf("unexpected conditional branch %q", tok.raw)
+			}
+			seenElse = tok.kind == tokenElse
+		}
+		if tok.kind == tokenSection || tok.kind == tokenInverted || tok.kind == tokenParent || tok.kind == tokenBlock || tok.kind == tokenIf {
 			child, err := parseSection(l, tok)
 			if err != nil {
 				return node{}, err
@@ -244,9 +273,47 @@ func (r *Renderer) renderNode(w *renderWriter, n node, stack []any, templatePath
 		return r.renderParent(w, n, stack, templatePath, overrides)
 	case tokenBlock:
 		return r.renderBlock(w, n, stack, templatePath, overrides)
+	case tokenIf:
+		return r.renderConditional(w, n, stack, templatePath, overrides)
 	default:
 		return r.renderSection(w, n, stack, templatePath, overrides)
 	}
+}
+
+func (r *Renderer) renderConditional(w *renderWriter, n node, stack []any, templatePath string, overrides map[string]block) error {
+	branch := n.token
+	start := 0
+	for i := 0; i <= len(n.children); i++ {
+		if i < len(n.children) && n.children[i].token.kind != tokenElif && n.children[i].token.kind != tokenElse {
+			continue
+		}
+		if branch.kind == tokenElse {
+			return r.renderNodes(w, n.children[start:i], stack, templatePath, overrides)
+		}
+		text, found, err := r.variableValue(branch, stack, templatePath)
+		if err != nil {
+			return err
+		}
+		if !found && r.options.Missing == MissingKeep {
+			_, err := io.WriteString(w, rawNodes([]node{n}))
+			return err
+		}
+		matched := text == branch.operand
+		if branch.pattern != nil {
+			matched = branch.pattern.MatchString(text)
+		}
+		if branch.operator == "!=" || branch.operator == "!~" {
+			matched = !matched
+		}
+		if matched {
+			return r.renderNodes(w, n.children[start:i], stack, templatePath, overrides)
+		}
+		if i < len(n.children) {
+			branch = n.children[i].token
+			start = i + 1
+		}
+	}
+	return nil
 }
 
 func (r *Renderer) renderSection(w *renderWriter, n node, stack []any, templatePath string, overrides map[string]block) error {
@@ -340,7 +407,7 @@ func rawNodes(nodes []node) string {
 func writeRawNodes(raw *strings.Builder, nodes []node) {
 	for _, n := range nodes {
 		raw.WriteString(n.token.raw)
-		if n.token.kind == tokenSection || n.token.kind == tokenInverted || n.token.kind == tokenParent || n.token.kind == tokenBlock {
+		if n.token.kind == tokenSection || n.token.kind == tokenInverted || n.token.kind == tokenParent || n.token.kind == tokenBlock || n.token.kind == tokenIf {
 			writeRawNodes(raw, n.children)
 			raw.WriteString(n.closeRaw)
 		}
@@ -358,7 +425,7 @@ func (r *Renderer) renderNodes(w *renderWriter, nodes []node, stack []any, templ
 			if err := r.renderVariable(w, n.token, stack, templatePath); err != nil {
 				return err
 			}
-		case tokenSection, tokenInverted, tokenParent, tokenBlock:
+		case tokenSection, tokenInverted, tokenParent, tokenBlock, tokenIf:
 			if err := r.renderNode(w, n, stack, templatePath, overrides); err != nil {
 				return err
 			}
@@ -709,6 +776,10 @@ const (
 	tokenBlock
 	tokenComment
 	tokenDelimiter
+	tokenIf
+	tokenElif
+	tokenElse
+	tokenFi
 )
 
 type token struct {
@@ -720,6 +791,9 @@ type token struct {
 	line     int
 	open     string
 	close    string
+	operator string
+	operand  string
+	pattern  *regexp.Regexp
 }
 
 type lexer struct {
@@ -884,6 +958,50 @@ func (l *lexer) makeToken(raw, inner string, triple bool) (token, error) {
 		kind, name = tokenBlock, strings.TrimSpace(trimmed[1:])
 	case '!':
 		return token{kind: tokenComment, raw: raw, open: open, close: close}, nil
+	case '?':
+		keyword := strings.Fields(trimmed)[0]
+		expression := strings.TrimSpace(trimmed[len(keyword):])
+		tok := token{raw: raw, open: open, close: close, name: keyword[1:]}
+		switch keyword {
+		case "?else", "?fi":
+			if expression != "" {
+				return token{}, fmt.Errorf("invalid conditional tag %q", trimmed)
+			}
+			tok.kind = tokenElse
+			if keyword == "?fi" {
+				tok.kind = tokenFi
+			}
+			return tok, nil
+		case "?if", "?elif":
+			tok.kind = tokenIf
+			if keyword == "?elif" {
+				tok.kind = tokenElif
+			}
+		default:
+			return token{}, fmt.Errorf("unknown conditional tag %q", keyword)
+		}
+		i := strings.IndexAny(expression, "=!<>")
+		if i < 0 || i+2 > len(expression) {
+			return token{}, fmt.Errorf("invalid conditional expression %q", expression)
+		}
+		tok.name = strings.TrimSpace(expression[:i])
+		if err := validateName(tok.name); err != nil {
+			return token{}, err
+		}
+		tok.operator = expression[i : i+2]
+		tok.operand = strings.TrimSpace(expression[i+2:])
+		switch tok.operator {
+		case "==", "!=":
+		case "=~", "!~":
+			pattern, err := regexp.Compile(tok.operand)
+			if err != nil {
+				return token{}, err
+			}
+			tok.pattern = pattern
+		default:
+			return token{}, fmt.Errorf("invalid conditional operator %q", tok.operator)
+		}
+		return tok, nil
 	case '=':
 		if !strings.HasSuffix(trimmed, "=") {
 			return token{}, fmt.Errorf("invalid set delimiter tag")
@@ -913,7 +1031,7 @@ func standalone(tokens []token) []token {
 			continue
 		}
 		switch tok.kind {
-		case tokenSection, tokenInverted, tokenEnd, tokenPartial, tokenParent, tokenBlock, tokenComment, tokenDelimiter:
+		case tokenSection, tokenInverted, tokenEnd, tokenPartial, tokenParent, tokenBlock, tokenComment, tokenDelimiter, tokenIf, tokenElif, tokenElse, tokenFi:
 			eligible++
 		default:
 			return tokens

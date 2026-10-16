@@ -1,0 +1,14 @@
+{{?if environment==production}}
+this is production {{?if lambda==production}}right{{?else}}wrong{{?fi}}
+{{?elif environment!=sandbox}}
+this is not sandbox
+{{?else}}
+this is something else
+{{?fi}}
+{{?if reaction=~^c.*$}}
+cool
+{{?elif reaction!~ce$}}
+not cool
+{{?else}}
+nice
+{{?fi}}

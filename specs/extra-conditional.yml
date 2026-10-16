@@ -1,0 +1,581 @@
+overview: |
+  Conditional blocks select at most one branch without changing the current
+  rendering context. An {{?if name==literal}} tag opens a block, optional
+  {{?elif name==literal}} tags introduce further conditions, {{?else}} provides
+  a fallback, and {{?fi}} closes the block. Conditions are checked in order;
+  only the first matching branch is rendered. Without a match or an else
+  branch, the block renders nothing. Blocks may be nested.
+
+  The supported operators are == (string equality), != (string inequality),
+  =~ (regular expression match), and !~ (negated regular expression match).
+  The left operand is a Mustache name, including dotted names and the implicit
+  iterator. Lookup and string coercion follow regular interpolation, but
+  comparison uses the unescaped value. Missing and null values compare as
+  empty strings under the default missing-tag policy. Strict mode reports a
+  missing operand as a missing-tag error. Keep-missing mode preserves the entire
+  conditional block unchanged if an evaluated operand is missing.
+
+  The right operand is a literal string or regular expression, never a name
+  to look up. Equality is exact and case-sensitive. Regular expressions match
+  any part of the value unless anchored. Whitespace padding around tag contents,
+  operands, and operators is ignored; whitespace within a literal is preserved.
+  An empty right operand is allowed. Operator-like text in the right operand
+  remains part of that literal or regular expression.
+
+  Branch bodies use normal Mustache rendering. Unselected bodies and conditions
+  after the first match are not evaluated. Conditional tags respect the active
+  delimiters and follow the standalone whitespace rules for section tags:
+  a tag alone on a line removes that line, including its indentation and newline.
+  Otherwise, surrounding text and whitespace are preserved.
+
+  Malformed blocks, missing left operands or operators, unsupported operators,
+  and invalid regular expressions are errors.
+
+tests:
+  - name: Simple Conditional Rendering
+    desc: Simple conditional rendering with if branch.
+    data: { environment: production }
+    template: |
+      {{?if environment==production}}
+      this is production
+      {{?fi}}
+    expected: |
+      this is production
+
+  - name: Conditional Rendering
+    desc: Conditional rendering with if, elif, and else branches.
+    data: { environment: sandbox }
+    template: |
+      {{?if environment==production}}
+      this is production
+      {{?elif environment!=sandbox}}
+      this is not sandbox
+      {{?else}}
+      this is something else
+      {{?fi}}
+    expected: |
+      this is something else
+
+  - name: Conditional Rendering with negation
+    desc: The != operator checks for inequality between the left and right expressions.
+    data: { environment: qa }
+    template: "{{?if environment!=production}}this is not production{{?fi}}"
+    expected: "this is not production"
+
+  - name: Conditional Rendering with regular expression on the right
+    desc: The =~ operator checks if the left expression matches the regular expression on the right.
+    data: { environment: production }
+    template: "{{?if environment=~^prod.*$}}this is production{{?fi}}"
+    expected: "this is production"
+
+  - name: Conditional Rendering with negated regular expression on the right
+    desc: The !~ operator checks if the left expression does not match the regular expression on the right.
+    data: { environment: qa }
+    template: "{{?if environment!~^prod}}this is not production{{?fi}}"
+    expected: "this is not production"
+
+  - name: Simple Conditional Rendering left and right expression
+    desc: Left expression is a tag to be evaluated, right expression should be a literal string.
+    data: { environment: qa, production: qa }
+    template: "{{?if environment==production}}this is production{{?fi}}"
+    expected: ""
+
+  # Branch selection
+
+  - name: False If Without Else
+    desc: A false condition without a fallback renders nothing and preserves surrounding text.
+    data: { environment: qa }
+    template: 'before{{?if environment==production}}hidden{{?fi}}after'
+    expected: 'beforeafter'
+
+  - name: If With Else
+    desc: A matching if branch suppresses the else branch.
+    data: { environment: production }
+    template: '{{?if environment==production}}production{{?else}}other{{?fi}}'
+    expected: 'production'
+
+  - name: Else Without Elif
+    desc: Else is selected when the if condition is false.
+    data: { environment: qa }
+    template: '{{?if environment==production}}production{{?else}}other{{?fi}}'
+    expected: 'other'
+
+  - name: Matching Elif
+    desc: An elif branch is rendered when the if condition is false and its condition is true.
+    data: { environment: qa }
+    template: '{{?if environment==production}}production{{?elif environment==qa}}qa{{?else}}other{{?fi}}'
+    expected: 'qa'
+
+  - name: Multiple Elif Branches
+    desc: Later elif branches are considered when all preceding conditions are false.
+    data: { environment: sandbox }
+    template: '{{?if environment==production}}production{{?elif environment==qa}}qa{{?elif environment==sandbox}}sandbox{{?else}}other{{?fi}}'
+    expected: 'sandbox'
+
+  - name: First Matching If Wins
+    desc: A matching if suppresses all later matching branches.
+    data: { environment: production }
+    template: '{{?if environment==production}}first{{?elif environment=~prod}}second{{?elif environment!=qa}}third{{?else}}last{{?fi}}'
+    expected: 'first'
+
+  - name: First Matching Elif Wins
+    desc: Only the first matching elif is rendered even when later conditions also match.
+    data: { environment: qa }
+    template: '{{?if environment==production}}first{{?elif environment==qa}}second{{?elif environment!=production}}third{{?else}}last{{?fi}}'
+    expected: 'second'
+
+  - name: No Matching Branch
+    desc: An if and elif chain without a matching condition or an else renders nothing.
+    data: { environment: sandbox }
+    template: '[{{?if environment==production}}production{{?elif environment==qa}}qa{{?fi}}]'
+    expected: '[]'
+
+  - name: Empty Matching Branch
+    desc: An empty selected branch still suppresses later matching branches and else.
+    data: { environment: production }
+    template: '[{{?if environment==production}}{{?elif environment!=qa}}wrong{{?else}}wrong{{?fi}}]'
+    expected: '[]'
+
+  - name: Empty Matching Elif
+    desc: An empty selected elif does not fall through to else.
+    data: { environment: qa }
+    template: '[{{?if environment==production}}wrong{{?elif environment==qa}}{{?else}}wrong{{?fi}}]'
+    expected: '[]'
+
+  - name: Consecutive Conditionals
+    desc: Branch selection is reset after each fi tag.
+    data: { environment: qa }
+    template: '{{?if environment==qa}}one{{?fi}}{{?if environment==production}}wrong{{?else}}two{{?fi}}{{?if environment==qa}}three{{?fi}}'
+    expected: 'onetwothree'
+
+  # Operators and literal operands
+
+  - name: Equality Is Exact
+    desc: Equality does not match a prefix or suffix of the value.
+    data: { environment: production }
+    template: '{{?if environment==prod}}prefix{{?elif environment==duction}}suffix{{?else}}exact{{?fi}}'
+    expected: 'exact'
+
+  - name: Equality Is Case Sensitive
+    desc: Equality distinguishes upper- and lowercase characters.
+    data: { environment: Production }
+    template: '{{?if environment==production}}wrong{{?else}}different{{?fi}}'
+    expected: 'different'
+
+  - name: Inequality With Equal Values
+    desc: Inequality is false for identical strings.
+    data: { environment: production }
+    template: '{{?if environment!=production}}wrong{{?else}}equal{{?fi}}'
+    expected: 'equal'
+
+  - name: Literal Internal Whitespace
+    desc: Spaces within a literal are preserved rather than removed or collapsed.
+    data: { value: 'release  candidate' }
+    template: '{{?if value==release candidate}}wrong{{?elif value==release  candidate}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Unicode Equality
+    desc: Literal comparisons support non-ASCII strings.
+    data: { value: 'préproduction' }
+    template: '{{?if value==préproduction}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Dotted Right Operand Is Literal
+    desc: A dotted right operand is not resolved as a data path.
+    data: { value: 'config.environment', config: { environment: wrong } }
+    template: '{{?if value==config.environment}}literal{{?fi}}'
+    expected: 'literal'
+
+  - name: Equality Right Operand Contains Operators
+    desc: Operator characters after the comparison operator remain part of the literal.
+    data: { value: 'a==b!=c=~d!~e' }
+    template: '{{?if value==a==b!=c=~d!~e}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Inequality Right Operand Is Literal
+    desc: Inequality does not look up the right operand in the data.
+    data: { environment: qa, production: qa }
+    template: '{{?if environment!=production}}different{{?fi}}'
+    expected: 'different'
+
+  - name: Regular Expression Nonmatch
+    desc: A nonmatching regular expression suppresses the if branch.
+    data: { environment: qa }
+    template: '{{?if environment=~^prod.*$}}wrong{{?else}}no match{{?fi}}'
+    expected: 'no match'
+
+  - name: Regular Expression Substring Match
+    desc: An unanchored regular expression may match within the value.
+    data: { environment: pre-production-eu }
+    template: '{{?if environment=~production}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Regular Expression Anchors
+    desc: Anchors can require the entire value to match.
+    data: { environment: pre-production-eu }
+    template: '{{?if environment=~^production$}}wrong{{?else}}no match{{?fi}}'
+    expected: 'no match'
+
+  - name: Regular Expression Syntax
+    desc: Grouping, alternation, character classes, and repetition are supported.
+    data: { environment: production-eu2 }
+    template: '{{?if environment=~^(production|qa)-[a-z]+[0-9]$}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Regular Expression Escaped Metacharacter
+    desc: Backslashes in a pattern retain their regular expression meaning.
+    data: { value: 'v1.2' }
+    template: '{{?if value=~^v1\.2$}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Regular Expression Left Operand Is Not A Pattern
+    desc: Only the right operand is compiled as a regular expression.
+    data: { value: '[' }
+    template: '{{?if value=~\[}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Regular Expression Right Operand Is Literal
+    desc: A pattern that is also a data key is not looked up.
+    data: { environment: production, prod: '^qa$' }
+    template: '{{?if environment=~prod}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Regular Expression Contains Operator Characters
+    desc: Operator characters in a pattern do not introduce another comparison.
+    data: { value: 'a==b' }
+    template: '{{?if value=~^a==b$}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Regular Expression Internal Whitespace
+    desc: Spaces inside a regular expression are preserved.
+    data: { value: ' release candidate  ' }
+    template: '{{?if value=~^ release candidate  $}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Negated Regular Expression Match
+    desc: A matching regular expression makes the negated operator false.
+    data: { environment: production }
+    template: '{{?if environment!~^prod}}wrong{{?else}}matched{{?fi}}'
+    expected: 'matched'
+
+  - name: Negated Regular Expression Right Operand Is Literal
+    desc: Negated matching does not resolve the pattern as a data key.
+    data: { environment: qa, prod: '^qa$' }
+    template: '{{?if environment!~prod}}no match{{?fi}}'
+    expected: 'no match'
+
+  # Lookup and string coercion
+
+  - name: Empty String Equality
+    desc: The right operand may be empty.
+    data: { value: '' }
+    template: '{{?if value==}}empty{{?else}}wrong{{?fi}}'
+    expected: 'empty'
+
+  - name: Nonempty String Inequality
+    desc: A nonempty value differs from an empty literal.
+    data: { value: text }
+    template: '{{?if value!=}}nonempty{{?fi}}'
+    expected: 'nonempty'
+
+  - name: Null Value
+    desc: Null values compare as empty strings, not as the word null.
+    data: { value: null }
+    template: '{{?if value==null}}wrong{{?elif value==}}empty{{?fi}}'
+    expected: 'empty'
+
+  - name: Missing Value
+    desc: Missing values compare as empty strings under the default missing-tag policy.
+    data: { }
+    template: '{{?if missing==}}empty{{?fi}}'
+    expected: 'empty'
+
+  - name: Missing Value Inequality
+    desc: A missing value differs from a nonempty literal.
+    data: { }
+    template: '{{?if missing!=production}}different{{?fi}}'
+    expected: 'different'
+
+  - name: Missing Value Regular Expression
+    desc: Regular expressions see an empty string for a missing value.
+    data: { }
+    template: '{{?if missing=~^$}}empty{{?fi}}'
+    expected: 'empty'
+
+  - name: Empty Regular Expression
+    desc: An empty regular expression matches any string, including an empty string.
+    data: { value: text, empty: '' }
+    template: '{{?if value=~}}one{{?fi}}{{?if empty=~}}two{{?fi}}{{?if value!~}}wrong{{?fi}}'
+    expected: 'onetwo'
+
+  - name: Integer Value
+    desc: Integer values use regular interpolation string coercion.
+    data: { value: 42 }
+    template: '{{?if value==42}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Zero Value
+    desc: Zero is compared as a string rather than treated as a false condition.
+    data: { value: 0 }
+    template: '{{?if value==0}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Boolean Values
+    desc: Both true and false can be compared to their string representations.
+    data: { enabled: true, disabled: false }
+    template: '{{?if enabled==true}}enabled{{?fi}}/{{?if disabled==false}}disabled{{?fi}}'
+    expected: 'enabled/disabled'
+
+  - name: No Numeric Comparison
+    desc: Equality does not numerically normalize string values or literals.
+    data: { value: '01' }
+    template: '{{?if value==1}}wrong{{?elif value==01}}exact{{?fi}}'
+    expected: 'exact'
+
+  - name: Unescaped Comparison
+    desc: Conditions compare raw values before any HTML escaping.
+    data: { value: '<&>' }
+    template: '{{?if value==<&>}}{{value}}{{?else}}wrong{{?fi}}'
+    expected: '&lt;&amp;&gt;'
+
+  - name: No Value Whitespace Trimming
+    desc: Padding is removed from the expression, not from the resolved value.
+    data: { value: ' production ' }
+    template: '{{?if value==production}}wrong{{?else}}different{{?fi}}'
+    expected: 'different'
+
+  - name: Dotted Left Operand
+    desc: Dotted names resolve nested values.
+    data: { config: { environment: production } }
+    template: '{{?if config.environment==production}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Broken Dotted Path
+    desc: An unresolved component of a dotted name behaves as a missing value.
+    data: { config: { } }
+    template: '{{?if config.environment==}}missing{{?fi}}'
+    expected: 'missing'
+
+  - name: Implicit Iterator
+    desc: A single period resolves the current scalar context.
+    data: production
+    template: '{{?if .==production}}match{{?fi}}'
+    expected: 'match'
+
+  - name: Repeated Section Context
+    desc: Conditions are evaluated for each iteration using the current item.
+    data: { environments: [production, qa, production] }
+    template: '{{#environments}}{{?if .==production}}P{{?else}}Q{{?fi}}{{/environments}}'
+    expected: 'PQP'
+
+  - name: Inner Context Shadows Parent
+    desc: Lookup starts in the innermost section context.
+    data: { environment: production, config: { environment: qa } }
+    template: '{{#config}}{{?if environment==qa}}inner{{?else}}wrong{{?fi}}{{/config}}'
+    expected: 'inner'
+
+  - name: Parent Context Fallback
+    desc: Lookup falls back to parent contexts when a name is absent in the current context.
+    data: { environment: production, config: { name: example } }
+    template: '{{#config}}{{?if environment==production}}{{name}}{{?fi}}{{/config}}'
+    expected: 'example'
+
+  - name: Dotted Lookup Does Not Retry Parents
+    desc: Once the first component resolves, missing children do not fall back to a parent path.
+    data: { config: { environment: production }, child: { config: { } } }
+    template: '{{#child}}{{?if config.environment==production}}wrong{{?else}}missing{{?fi}}{{/child}}'
+    expected: 'missing'
+
+  - name: Conditional Does Not Push Context
+    desc: A matched value does not replace the current context for the implicit iterator.
+    data: { environment: production, names: [Ada, Bob] }
+    template: '{{#names}}{{?if environment==production}}{{.}}{{?fi}}{{/names}}'
+    expected: 'AdaBob'
+
+  # Nesting and other Mustache tags
+
+  - name: Nested Matching Conditionals
+    desc: Nested matching blocks render independently and preserve following outer content.
+    data: { environment: production, region: eu }
+    template: '{{?if environment==production}}outer[{{?if region==eu}}inner{{?fi}}]after{{?else}}wrong{{?fi}}'
+    expected: 'outer[inner]after'
+
+  - name: Nested Else
+    desc: An inner else belongs to the inner conditional, not the outer one.
+    data: { environment: production, region: us }
+    template: '{{?if environment==production}}outer[{{?if region==eu}}eu{{?else}}us{{?fi}}]{{?else}}wrong{{?fi}}'
+    expected: 'outer[us]'
+
+  - name: Nested Elif
+    desc: Inner elif and fi tags do not affect outer branch selection.
+    data: { environment: production, region: us }
+    template: '{{?if environment==production}}[{{?if region==eu}}eu{{?elif region==us}}us{{?else}}other{{?fi}}]{{?elif environment!=qa}}wrong{{?else}}wrong{{?fi}}'
+    expected: '[us]'
+
+  - name: Nested Conditional In Skipped Branch
+    desc: An inner matching branch or else cannot render when its outer branch is skipped.
+    data: { environment: qa, region: eu }
+    template: '{{?if environment==production}}{{?if region==eu}}wrong{{?else}}wrong{{?fi}}{{?elif environment==qa}}qa{{?else}}wrong{{?fi}}'
+    expected: 'qa'
+
+  - name: Conditional In Else Branch
+    desc: Nested conditionals also work in a selected fallback branch.
+    data: { environment: qa, region: eu }
+    template: '{{?if environment==production}}wrong{{?else}}{{?if region==eu}}eu{{?else}}other{{?fi}}{{?fi}}'
+    expected: 'eu'
+
+  - name: Regular Section In Conditional
+    desc: A selected branch renders regular sections, inverted sections, and interpolation normally.
+    data: { environment: production, names: [Ada, Bob], disabled: false }
+    template: '{{?if environment==production}}{{#names}}[{{.}}]{{/names}}{{^disabled}}enabled{{/disabled}}{{?fi}}'
+    expected: '[Ada][Bob]enabled'
+
+  - name: Conditional In Inverted Section
+    desc: Conditional blocks can be nested in inverted sections.
+    data: { disabled: false, environment: production }
+    template: '{{^disabled}}{{?if environment==production}}enabled{{?fi}}{{/disabled}}'
+    expected: 'enabled'
+
+  - name: Skipped Regular Sections
+    desc: Regular and inverted sections inside an unselected branch produce no output.
+    data: { environment: qa, names: [Ada, Bob], disabled: false }
+    template: '{{?if environment==production}}{{#names}}{{.}}{{/names}}{{^disabled}}wrong{{/disabled}}{{?else}}qa{{?fi}}'
+    expected: 'qa'
+
+  - name: Partial In Conditional
+    desc: A partial in a selected branch uses the unchanged current context.
+    data: { environment: production, name: Ada }
+    template: '{{?if environment==production}}{{>greeting}}{{?fi}}'
+    partials: { greeting: 'Hello, {{name}}!' }
+    expected: 'Hello, Ada!'
+
+  - name: Conditional In Partial
+    desc: Conditional tags are recognized inside partial templates.
+    data: { environment: qa }
+    template: '[{{>environment}}]'
+    partials: { environment: '{{?if environment==production}}prod{{?else}}other{{?fi}}' }
+    expected: '[other]'
+
+  - name: Conditional In Section Lambda
+    desc: Section lambdas receive the original conditional tags and can return them for rendering.
+    data:
+      environment: production
+      lambda: !code
+        bash: 'if [[ $1 == "{{ ?if environment==production }}yes{{?elif environment==qa}}qa{{?else}}other{{ ?fi }}" ]]; then printf "%s" "$1"; else exit 3; fi'
+    template: '{{#lambda}}{{ ?if environment==production }}yes{{?elif environment==qa}}qa{{?else}}other{{ ?fi }}{{/lambda}}'
+    expected: 'yes'
+
+  - name: Lambda Left Operand
+    desc: A lambda operand is expanded against the current context before comparison, as in interpolation.
+    data:
+      environment: production
+      lambda: !code
+        bash: 'printf "%s" "{{environment}}"'
+    template: '{{?if lambda==production}}match{{?else}}wrong{{?fi}}'
+    expected: 'match'
+
+  - name: Conditional In Default Block
+    desc: A default inheritance block renders conditionals using the current context.
+    data: { environment: production }
+    template: '[{{$body}}{{?if environment==production}}yes{{?else}}no{{?fi}}{{/body}}]'
+    expected: '[yes]'
+
+  - name: Conditional In Overridden Block
+    desc: A block override renders conditionals while preserving the parent layout.
+    data: { environment: production }
+    template: '{{<layout}}{{$body}}{{?if environment==production}}yes{{?else}}no{{?fi}}{{/body}}{{/layout}}'
+    partials: { layout: 'prefix[{{$body}}default{{/body}}]suffix' }
+    expected: 'prefix[yes]suffix'
+
+  - name: Standalone Partial Indentation
+    desc: Conditional control lines disappear without removing indentation from a partial body.
+    data: { environment: production }
+    template: "  {{>environment}}\n"
+    partials: { environment: "{{?if environment==production}}\nproduction\n{{?else}}\nother\n{{?fi}}\n" }
+    expected: "  production\n"
+
+  - name: Comments In Branches
+    desc: Comments render nothing in selected branches and cannot introduce conditional control tags.
+    data: { environment: production }
+    template: '{{?if environment==production}}a{{! ?else }}b{{?else}}wrong{{?fi}}'
+    expected: 'ab'
+
+  - name: Indented Interpolation In Conditional
+    desc: Indented interpolation uses only the selected branch output as its prefix.
+    data: { environment: qa, text: "first\nsecond" }
+    template: '{{?if environment==production}}a long hidden prefix{{?else}}ID: {{|text}}{{?fi}}'
+    expected: "ID: first\n    second"
+
+  - name: Alternate Delimiters
+    desc: All conditional control tags respect delimiter changes.
+    data: { environment: qa }
+    template: '{{=<% %>=}}<%?if environment==production%>prod<%?elif environment==qa%>qa<%?else%>other<%?fi%>'
+    expected: 'qa'
+
+  # Whitespace and standalone tags
+
+  - name: Expression Padding
+    desc: Padding around tags, operands, and operators is ignored for if and elif.
+    data: { environment: qa }
+    template: "{{ ?if\t environment \t== production }}wrong{{ ?elif\t environment \t== qa }}qa{{ ?else }}wrong{{ ?fi }}"
+    expected: 'qa'
+
+  - name: Standalone All Branches
+    desc: Standalone if, elif, else, and fi lines are removed while selected body indentation is preserved.
+    data: { environment: qa }
+    template: |2
+      before
+        {{?if environment==production}}
+          production
+        {{?elif environment==qa}}
+          qa
+        {{?else}}
+          other
+        {{?fi}}
+      after
+    expected: |2
+      before
+          qa
+      after
+
+  - name: Standalone CRLF
+    desc: Conditional standalone lines support CRLF and preserve body line endings.
+    data: { environment: qa }
+    template: "before\r\n\t{{?if environment==production}}\r\nwrong\r\n\t{{?elif environment==qa}}\r\nqa\r\n\t{{?else}}\r\nwrong\r\n\t{{?fi}}\r\nafter\r\n"
+    expected: "before\r\nqa\r\nafter\r\n"
+
+  - name: Standalone At End Of File
+    desc: A standalone fi at the end of input does not require a final newline.
+    data: { environment: production }
+    template: "{{?if environment==production}}\nproduction\n  {{?fi}}"
+    expected: "production\n"
+
+  - name: Inline Whitespace
+    desc: Inline control tags do not remove adjacent spaces or tabs.
+    data: { environment: production }
+    template: "before {{?if environment==production}}\tproduction {{?else}}wrong{{?fi}} after"
+    expected: "before \tproduction  after"
+
+  - name: Inline Opening Tag
+    desc: Text before an opening tag prevents its line from being stripped as standalone.
+    data: { environment: production }
+    template: "before {{?if environment==production}}\nproduction\n{{?fi}}\nafter"
+    expected: "before \nproduction\nafter"
+
+  - name: Inline Closing Tag
+    desc: Text after a closing tag prevents its line from being stripped as standalone.
+    data: { environment: production }
+    template: "{{?if environment==production}}\nproduction\n  {{?fi}} after\n"
+    expected: "production\n   after\n"
+
+  - name: Inline Else Tag
+    desc: A non-standalone else leaves the selected branch's leading newline intact.
+    data: { environment: qa }
+    template: "{{?if environment==production}}wrong{{?else}}\nqa\n{{?fi}}"
+    expected: "\nqa\n"
+
+  - name: Selected Body Blank Lines
+    desc: Standalone stripping does not remove blank lines within the selected branch.
+    data: { environment: production }
+    template: "{{?if environment==production}}\n\n  production\n\n{{?fi}}\n"
+    expected: "\n  production\n\n"

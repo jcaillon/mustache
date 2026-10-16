@@ -125,6 +125,7 @@ func TestRenderAcrossBufferBoundaries(t *testing.T) {
 		{name: "standalone", template: strings.Repeat(" ", 5000) + "{{! comment}}\nafter", want: "after"},
 		{name: "indented", template: strings.Repeat("x", 5000) + "{{|text}}", want: strings.Repeat("x", 5000) + "Ada\n" + strings.Repeat(" ", 5000) + "Lovelace"},
 		{name: "indented unicode", template: strings.Repeat("x", 4095) + "é{{|text}}", want: strings.Repeat("x", 4095) + "éAda\n" + strings.Repeat(" ", 4096) + "Lovelace"},
+		{name: "conditional", template: strings.Repeat("x", 4095) + "{{?if name==Ada}}yes{{?else}}no{{?fi}}", want: strings.Repeat("x", 4095) + "yes"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -305,6 +306,164 @@ func TestKeepMissingStandalonePartials(t *testing.T) {
 	}
 	if output.String() != template {
 		t.Fatalf("rendered output mismatch: want %q, got %q", template, output.String())
+	}
+}
+
+func TestConditionalOptions(t *testing.T) {
+	tests := []struct {
+		name     string
+		options  Options
+		template string
+		want     string
+	}{
+		{
+			name:     "disable HTML escape",
+			options:  Options{DisableHTMLEscape: true},
+			template: "{{?if environment==production}}{{text}}{{?fi}}",
+			want:     "<b>&</b>",
+		},
+		{
+			name:     "configured delimiters",
+			options:  Options{Delimiters: [2]string{"<%", "%>"}},
+			template: "<%?if environment==qa%>wrong<%?elif environment==production%><%text%><%?else%>wrong<%?fi%>",
+			want:     "&lt;b&gt;&amp;&lt;/b&gt;",
+		},
+		{
+			name:     "strict skips later conditions and bodies after if",
+			options:  Options{Missing: MissingError},
+			template: "{{?if environment==production}}selected{{?elif missing==value}}{{missing}}{{?else}}{{>missing}}{{?fi}}",
+			want:     "selected",
+		},
+		{
+			name:     "strict skips later conditions and bodies after elif",
+			options:  Options{Missing: MissingError},
+			template: "{{?if environment==qa}}{{missing}}{{?elif environment==production}}selected{{?elif missing==value}}{{missing}}{{?else}}{{>missing}}{{?fi}}",
+			want:     "selected",
+		},
+		{
+			name:     "strict skips nested conditions in unselected branch",
+			options:  Options{Missing: MissingError},
+			template: "{{?if environment==qa}}{{?if missing==value}}{{missing}}{{?else}}{{>missing}}{{?fi}}{{?else}}selected{{?fi}}",
+			want:     "selected",
+		},
+		{
+			name:     "skips lambda execution in unselected branch",
+			options:  Options{Missing: MissingError},
+			template: "{{?if environment==qa}}{{lambda}}{{#lambda}}wrong{{/lambda}}{{?else}}selected{{?fi}}",
+			want:     "selected",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			renderer, err := New(test.options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var output strings.Builder
+			data := map[string]any{
+				"environment": "production",
+				"text":        "<b>&</b>",
+				"lambda":      BashLambda("exit 3"),
+			}
+			if err := renderer.Render(&output, strings.NewReader(test.template), "", data); err != nil {
+				t.Fatal(err)
+			}
+			if output.String() != test.want {
+				t.Fatalf("rendered output mismatch: want %q, got %q", test.want, output.String())
+			}
+		})
+	}
+}
+
+func TestKeepMissingConditionals(t *testing.T) {
+	for _, template := range []string{
+		"{{ ?if missing == value }}{{text}}{{?elif environment==production}}selected{{?else}}other{{ ?fi }}",
+		"{{?if environment==qa}}qa{{?elif missing==value}}{{text}}{{?else}}other{{?fi}}",
+		"before\n  {{?if missing==value}}\n{{?if environment==production}}nested{{?fi}}\n{{?else}}\n{{text}}\n  {{?fi}}\nafter",
+	} {
+		t.Run(template, func(t *testing.T) {
+			renderer, err := New(Options{Missing: MissingKeep})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var output strings.Builder
+			err = renderer.Render(&output, strings.NewReader(template), "", map[string]any{"environment": "production", "text": "expanded"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if output.String() != template {
+				t.Fatalf("rendered output mismatch: want %q, got %q", template, output.String())
+			}
+		})
+	}
+}
+
+func TestConditionalMissingErrors(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		line     int
+	}{
+		{name: "if operand", template: "before\n{{?if missing==value}}selected{{?fi}}", line: 2},
+		{name: "elif operand", template: "{{?if environment==qa}}\nwrong\n{{?elif missing==value}}\nselected\n{{?fi}}", line: 3},
+		{name: "selected body", template: "{{?if environment==production}}\n{{missing}}\n{{?fi}}", line: 2},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			renderer, err := New(Options{Missing: MissingError})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = renderer.Render(&strings.Builder{}, strings.NewReader(test.template), "", map[string]any{"environment": "production"})
+			var renderErr *Error
+			if !errors.As(err, &renderErr) || renderErr.Line != test.line || renderErr.Err.Error() != `missing tag "missing"` {
+				t.Fatalf("expected missing-tag error on line %d, got %v", test.line, err)
+			}
+		})
+	}
+}
+
+func TestMalformedConditionals(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+	}{
+		{name: "unclosed if", template: "{{?if value==yes}}"},
+		{name: "unclosed elif", template: "{{?if value==no}}a{{?elif value==yes}}b"},
+		{name: "unclosed else", template: "{{?if value==no}}a{{?else}}b"},
+		{name: "unexpected fi", template: "{{?fi}}"},
+		{name: "unexpected else", template: "{{?else}}"},
+		{name: "unexpected elif", template: "{{?elif value==yes}}"},
+		{name: "duplicate else", template: "{{?if value==yes}}a{{?else}}b{{?else}}c{{?fi}}"},
+		{name: "elif after else", template: "{{?if value==yes}}a{{?else}}b{{?elif value==no}}c{{?fi}}"},
+		{name: "if without condition", template: "{{?if}}{{?fi}}"},
+		{name: "elif without condition", template: "{{?if value==no}}a{{?elif}}b{{?fi}}"},
+		{name: "else with condition", template: "{{?if value==yes}}a{{?else value==no}}b{{?fi}}"},
+		{name: "fi with condition", template: "{{?if value==yes}}a{{?fi value==yes}}"},
+		{name: "missing left operand", template: "{{?if ==yes}}a{{?fi}}"},
+		{name: "missing elif left operand", template: "{{?if value==no}}a{{?elif !=yes}}b{{?fi}}"},
+		{name: "missing operator", template: "{{?if value}}a{{?fi}}"},
+		{name: "unsupported operator", template: "{{?if value>yes}}a{{?fi}}"},
+		{name: "invalid left name", template: "{{?if two names==yes}}a{{?fi}}"},
+		{name: "invalid regular expression", template: "{{?if value=~[}}a{{?fi}}"},
+		{name: "invalid negated regular expression", template: "{{?if value!~[}}a{{?fi}}"},
+		{name: "invalid elif regular expression", template: "{{?if value==no}}a{{?elif value=~[}}b{{?fi}}"},
+		{name: "unclosed nested if", template: "{{?if value==yes}}{{?if value==yes}}a{{?fi}}"},
+		{name: "conditional closed by section", template: "{{?if value==yes}}a{{/value}}"},
+		{name: "section closed by conditional", template: "{{#value}}a{{?fi}}"},
+		{name: "crossed section and conditional", template: "{{#value}}{{?if value==yes}}{{/value}}{{?fi}}"},
+		{name: "crossed conditional and section", template: "{{?if value==yes}}{{#value}}{{?fi}}{{/value}}"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			renderer, err := New(Options{Missing: MissingEmpty})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := renderer.Render(&strings.Builder{}, strings.NewReader(test.template), "", map[string]any{"value": "yes"}); err == nil {
+				t.Fatal("expected malformed conditional error")
+			}
+		})
 	}
 }
 
