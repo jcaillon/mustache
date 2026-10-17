@@ -150,6 +150,8 @@ mustache --output-separator $'\n---\n' data.yml template.yml.mustache
 
 ## Examples
 
+For a compact syntax reference with one data file, an annotated template and expected output, see the [demo](demo/README.md).
+
 Render a template from files:
 
 ```sh

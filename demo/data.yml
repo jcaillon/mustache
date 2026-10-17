@@ -1,0 +1,25 @@
+project: Atlas
+user:
+  name: Ada
+html: <b>Hello & welcome</b>
+
+enabled: true
+services:
+  - name: api
+    port: 8080
+  - name: web
+    port: 3000
+tags: [go, cli]
+alerts: []
+
+partial: card
+note: |-
+  First line.
+  Second line, aligned.
+environment: qa-1
+
+# These commands execute during rendering. Only render trusted YAML; Bash is required.
+greeting: !code
+  bash: "printf 'Hello {{user.name}}'"
+wrap: !code
+  bash: 'printf "[%s]" "$1"'

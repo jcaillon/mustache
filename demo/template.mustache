@@ -1,0 +1,58 @@
+{{! Comments disappear from the output; standalone comment lines leave no blank line. }}
+1. Variables, dotted names and escaping
+Hello {{user.name}} from {{project}}!
+Escaped: {{html}}
+Raw: {{{html}}} | {{&html}}
+{{! Missing values render as empty strings by default. Only use raw tags for trusted content. }}
+Missing: [{{missing}}]
+
+2. Sections, lists and inverted sections
+{{! Objects become the current context; missing names fall back to parent contexts. }}
+{{#user}}
+User: {{name}} (project: {{project}})
+{{/user}}
+{{#enabled}}Enabled.{{/enabled}}{{^enabled}}Disabled.{{/enabled}}
+{{#services}}
+- {{name}}:{{port}} (project: {{project}})
+{{/services}}
+{{! A dot refers to the current item, useful for lists of strings or numbers. }}
+Tags:{{#tags}} {{.}}{{/tags}}
+{{! Inverted sections render for false, null, missing values or empty lists. }}
+{{^alerts}}No alerts.{{/alerts}}
+
+3. Reuse: partials, dynamic names and inheritance
+{{! Partial paths are relative to this template; standalone partials inherit indentation. }}
+Static partial:
+  {{>card}}
+{{! The asterisk looks up a partial name in the data instead of using a literal filename. }}
+Dynamic partial:
+  {{>*partial}}
+{{! A parent expands a template and overrides named blocks; other blocks keep their defaults. }}
+Parent with a block override:
+{{<card}}
+{{$body}}Custom body for {{user.name}}.{{/body}}
+{{/card}}
+
+4. Changing delimiters
+{{=<% %>=}}
+Hello <%user.name%>; {{user.name}} is now literal.
+<%={{ }}=%>
+
+5. Lambdas (optional; this project's YAML binding runs Bash)
+{{! Interpolation calls with no arguments; sections pass raw text as $1, then render the result. }}
+Interpolation: {{greeting}}
+Section: {{#wrap}}Hello {{user.name}}{{/wrap}}
+
+6. Indented interpolation (project extension)
+{{! Continuation lines align with the tag's position in the rendered output. }}
+note: {{|note}}
+
+7. Conditional branches (project extension)
+{{! The right operand is literal text, not a data lookup. Operators: ==, !=, =~, !~. }}
+{{?if environment==production}}
+Production settings.
+{{?elif environment=~^qa}}
+QA settings for {{environment}}.
+{{?else}}
+Development settings.
+{{?fi}}

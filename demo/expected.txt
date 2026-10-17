@@ -1,0 +1,38 @@
+1. Variables, dotted names and escaping
+Hello Ada from Atlas!
+Escaped: &lt;b&gt;Hello &amp; welcome&lt;/b&gt;
+Raw: <b>Hello & welcome</b> | <b>Hello & welcome</b>
+Missing: []
+
+2. Sections, lists and inverted sections
+User: Ada (project: Atlas)
+Enabled.
+- api:8080 (project: Atlas)
+- web:3000 (project: Atlas)
+Tags: go cli
+No alerts.
+
+3. Reuse: partials, dynamic names and inheritance
+Static partial:
+  [Atlas]
+  Default body for Ada.
+Dynamic partial:
+  [Atlas]
+  Default body for Ada.
+Parent with a block override:
+[Atlas]
+Custom body for Ada.
+
+4. Changing delimiters
+Hello Ada; {{user.name}} is now literal.
+
+5. Lambdas (optional; this project's YAML binding runs Bash)
+Interpolation: Hello Ada
+Section: [Hello Ada]
+
+6. Indented interpolation (project extension)
+note: First line.
+      Second line, aligned.
+
+7. Conditional branches (project extension)
+QA settings for qa-1.
