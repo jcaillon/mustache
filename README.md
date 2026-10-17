@@ -143,6 +143,7 @@ mustache --output-separator $'\n---\n' data.yml template.yml.mustache
 | `--keep-missing-tags` | Keep missing tags "as is" in the output instead of replacing them with empty strings. |
 | `--output-separator` | String written between rendered documents. Defaults to an empty string (no separator). |
 | `--override-data` | Single-document YAML file to merge after each main data document. Repeat for multiple files, merged in the given order. |
+| `--run-count N` | Render each document `N` times, using each result as the next template with the same data. Defaults to `1`; must be at least `1`. Only the final result is printed. |
 | `--strict` | Fail on missing tags or partial files. Missing partial errors include the full expected file path. |
 | `--set-delimiters` | Set custom delimiters for the template. The opening and closing delimiters should be separated by a whitespace. For example, `--set-delimiters "{{ }}"` sets the delimiters to the default Mustache delimiters. |
 | `-v`, `--verbose` | Log rendering steps, contextual lookups, partials, and Bash lambda execution details to standard error. |
@@ -192,6 +193,32 @@ Merge defaults and environment-specific overrides into every main data document:
 ```sh
 mustache --base-data defaults.yml --base-data shared.yml --override-data production.yml data.yml template.mustache
 ```
+
+Use multiple passes to resolve indirect data references. Given `data.yml`:
+
+```yaml
+open: '{{'
+close: '}}'
+choice: prod
+env:
+  prod: production
+  qa: quality assurance
+```
+
+And `template.mustache`:
+
+```mustache
+env: <{{open}}env.{{choice}}{{close}}>
+```
+
+Run:
+
+```sh
+mustache --run-count 2 --disable-html-escape data.yml template.mustache
+```
+
+The first pass produces `env: <{{env.prod}}>`; the second prints `env: <production>`.
+Each pass uses the same options and merged data. Intermediate results are held in memory; template files are not modified.
 
 ### Lambdas
 

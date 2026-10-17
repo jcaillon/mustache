@@ -1,0 +1,123 @@
+overview: |
+  --run-count renders the same template in place multiple times with the given data.
+  It allows indirect referencing of data within the template.
+tests:
+  - &indirect-reference
+    name: run-count-2
+    args: [--run-count, '2', --disable-html-escape, data.yml, template.mustache]
+    files:
+      - path: data.yml
+        content: |
+          open: '{{'
+          close: '}}'
+          choice: prod
+          env:
+            prod: production
+            qa: quality assurance
+      - path: template.mustache
+        content: |
+          env: <{{open}}env.{{choice}}{{close}}>
+    stdout: |
+      env: <production>
+
+  - <<: *indirect-reference
+    name: run-count-1
+    args: [--run-count, '1', --disable-html-escape, data.yml, template.mustache]
+    stdout: |
+      env: <{{env.prod}}>
+
+  - <<: *indirect-reference
+    name: Default run count is one
+    args: [--disable-html-escape, data.yml, template.mustache]
+    stdout: |
+      env: <{{env.prod}}>
+
+  - &chained-reference
+    name: Three passes resolve a reference chain
+    args: [--run-count, '3', '-', template.mustache]
+    stdin: |
+      first: '{{second}}'
+      second: '{{third}}'
+      third: resolved
+    files:
+      - path: template.mustache
+        content: '{{first}}'
+    stdout: resolved
+
+  - <<: *chained-reference
+    name: Stop after the requested number of passes
+    args: [--run-count, '2', '-', template.mustache]
+    stdout: '{{third}}'
+
+  - name: Each document starts from the original template with merged data
+    args: [--run-count, '2', --base-data, base.yml, --override-data, override.yml, --output-separator, '|{{ref}}|', '-', template.mustache]
+    stdin: "name: Ada\n---\nname: Go\n"
+    files:
+      - path: base.yml
+        content: "ref: '{{name}} {{suffix}}'\nsuffix: base\n"
+      - path: override.yml
+        content: "suffix: override\n"
+      - path: template.mustache
+        content: '{{ref}}'
+    stdout: 'Ada override|{{ref}}|Go override'
+
+  - name: Generated partials remain relative to the template
+    args: [--run-count, '2', --strict, '-', templates/template.mustache]
+    stdin: "ref: '{{>partial.mustache}}'\nname: Ada\n"
+    files:
+      - path: templates/template.mustache
+        content: '{{{ref}}}'
+      - path: templates/partial.mustache
+        content: 'Hello {{name}}!'
+    stdout: Hello Ada!
+
+  - name: Custom delimiters apply to every pass
+    args: [--run-count, '2', --set-delimiters, '<% %>', '-', template.mustache]
+    stdin: "ref: '<%name%>'\nname: Ada\n"
+    files:
+      - path: template.mustache
+        content: '<%&ref%>'
+    stdout: Ada
+
+  - name: HTML escaping applies to substitutions without re-escaping literal text
+    args: [--run-count, '2', '-', template.mustache]
+    stdin: "ref: '{{name}}'\nname: '<Ada>'\n"
+    files:
+      - path: template.mustache
+        content: '{{ref}} {{name}}'
+    stdout: '&lt;Ada&gt; &lt;Ada&gt;'
+
+  - &render-error
+    name: Intermediate errors stop rendering without printing intermediate output
+    args: [--run-count, '3', --strict, '-', template.mustache]
+    stdin: "ref: '{{missing}}'\n"
+    files:
+      - path: template.mustache
+        content: "before\n{{ref}}"
+    exit_code: 1
+    stderr: "mustache: render template ${DIR}/template.mustache:2: missing tag \"missing\"\n"
+
+  - <<: *render-error
+    name: Final pass errors retain normal error reporting
+    args: [--run-count, '2', --strict, '-', template.mustache]
+    stdout: "before\n"
+
+  - &invalid-count
+    name: Reject zero runs
+    args: [--run-count, '0', data.yml, template.mustache]
+    exit_code: 2
+    stderr: "mustache: --run-count must be at least 1\n"
+
+  - <<: *invalid-count
+    name: Reject negative runs
+    args: [--run-count, '-1', data.yml, template.mustache]
+
+  - name: Reject non-integer runs
+    args: [--run-count, many, data.yml, template.mustache]
+    exit_code: 2
+    stderr_contains: ['invalid value "many" for flag -run-count']
+
+  - name: Reject missing run count
+    args: [--run-count]
+    exit_code: 2
+    stderr_contains: ['flag needs an argument: -run-count']

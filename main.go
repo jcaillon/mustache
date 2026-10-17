@@ -46,6 +46,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		overrideData = append(overrideData, name)
 		return nil
 	})
+	runCount := flags.Int("run-count", 1, "render `N` times, using each result as the next template")
 	strict := flags.Bool("strict", false, "fail when a tag or partial file is missing")
 	setDelimiters := flags.String("set-delimiters", "{{ }}", "opening and closing `DELIMITERS` separated by whitespace")
 	showVersion := flags.Bool("version", false, "print the version and exit")
@@ -110,6 +111,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if *keepMissing && *strict {
 		fmt.Fprintln(stderr, "mustache: --keep-missing-tags and --strict cannot be used together")
+		return 2
+	}
+	if *runCount < 1 {
+		fmt.Fprintln(stderr, "mustache: --run-count must be at least 1")
 		return 2
 	}
 
@@ -210,7 +215,20 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			_, err = io.WriteString(stdout, *outputSeparator)
 		}
 		if err == nil {
-			err = renderer.Render(stdout, template, flags.Arg(1), merged)
+			var input io.Reader = template
+			for pass := 0; pass < *runCount; pass++ {
+				var intermediate strings.Builder
+				var output io.Writer = stdout
+				if pass < *runCount-1 {
+					output = &intermediate
+				}
+				if err = renderer.Render(output, input, flags.Arg(1), merged); err != nil {
+					break
+				}
+				if pass < *runCount-1 {
+					input = strings.NewReader(intermediate.String())
+				}
+			}
 		}
 		closeErr := template.Close()
 		if err != nil {

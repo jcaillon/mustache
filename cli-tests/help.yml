@@ -30,6 +30,8 @@ tests:
             write TEXT between rendered YAML documents (default: no separator)
         --override-data FILE
             merge YAML FILE after the main data (repeatable)
+        --run-count N
+            render N times, using each result as the next template (default: "1")
         --set-delimiters DELIMITERS
             opening and closing DELIMITERS separated by whitespace (default: "{{ }}")
         --strict
