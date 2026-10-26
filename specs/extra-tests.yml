@@ -17,3 +17,63 @@ tests:
       x: '<&>"'''
     template: "{{x}}"
     expected: "&lt;&amp;&gt;&quot;&#39;"
+
+  # Missing tests from the specifications (for sections)
+
+  - name: section with empty value
+    desc: HTML should be escaped in variables.
+    data:
+      x: ""
+    template: "{{#x}}ok{{/x}}"
+    expected: "ok"
+
+  - name: section with null value
+    desc: HTML should be escaped in variables.
+    data:
+      x: null
+    template: "{{#x}}ko{{/x}}"
+    expected: ""
+
+  - name: section with false value
+    desc: HTML should be escaped in variables.
+    data:
+      x: false
+    template: "{{#x}}ko{{/x}}"
+    expected: ""
+
+  - name: section with 0 value
+    desc: HTML should be escaped in variables.
+    data:
+      x: 0
+    template: "{{#x}}ok{{/x}}"
+    expected: "ok"
+
+  # Missing tests from the specifications (for inverted sections)
+
+  - name: inverted with empty value
+    desc: HTML should be escaped in variables.
+    data:
+      x: ""
+    template: "{{^x}}ko{{/x}}"
+    expected: ""
+
+  - name: inverted with null value
+    desc: HTML should be escaped in variables.
+    data:
+      x: null
+    template: "{{^x}}ok{{/x}}"
+    expected: "ok"
+
+  - name: inverted with false value
+    desc: HTML should be escaped in variables.
+    data:
+      x: false
+    template: "{{^x}}ok{{/x}}"
+    expected: "ok"
+
+  - name: inverted with 0 value
+    desc: HTML should be escaped in variables.
+    data:
+      x: 0
+    template: "{{^x}}ko{{/x}}"
+    expected: ""
