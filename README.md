@@ -17,6 +17,7 @@ The `mustache` command renders a [Mustache](https://mustache.github.io/) templat
 - [How it works](#how-it-works)
   - [Data and templates](#data-and-templates)
   - [Multiple YAML documents](#multiple-yaml-documents)
+  - [Sections and inverted sections](#sections-and-inverted-sections)
   - [Lambdas](#lambdas)
 - [Mustache extensions](#mustache-extensions)
   - [Indented interpolation](#indented-interpolation)
@@ -213,6 +214,12 @@ By default, rendered documents are concatenated without a separator. Use `--outp
 ```sh
 mustache --output-separator $'\n---\n' data.yml template.yml.mustache
 ```
+
+### Sections and inverted sections
+
+A mustache section `{{#var}}...{{/var}}` renders the block if the `var` value is truthy, and an inverted section `{{^var}}...{{/var}}` renders the block if the `var` value is falsy.
+
+A truthy value is any value that is not considered falsy. Falsy values include boolean `false`, `null`, and empty arrays. All other values are considered truthy (see [specs/extra-tests.yml](specs/extra-tests.yml) for examples).
 
 ### Lambdas
 
